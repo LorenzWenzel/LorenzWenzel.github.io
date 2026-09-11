@@ -8,7 +8,7 @@ Eine Serie über den Bau eines Agenten, der natürlichsprachige Fragen in SQL
 übersetzt, die Abfrage gegen **Amazon Athena** ausführt und das Ergebnis
 verständlich zurückgibt.
 
-![Übersicht: Der Nutzer fragt den Chatbot. Der Chatbot ruft Amazon Bedrock für das Modell auf und den MCP-Server für die Werkzeuge. Der MCP-Server führt SQL auf Amazon Athena aus, Athena liest aus Amazon S3.](/assets/img/architektur-ueberblick.svg)
+![Übersicht: Der Nutzer fragt den Chatbot. Der Chatbot ruft Amazon Bedrock für das Modell auf und den MCP-Server für die Werkzeuge. Der MCP-Server führt SQL auf Amazon Athena aus, Athena liest aus Amazon S3.](/assets/img/text2sql_architecture.jpeg)
 
 
 {% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
