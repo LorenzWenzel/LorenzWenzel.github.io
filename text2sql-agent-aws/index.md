@@ -11,7 +11,8 @@ verständlich zurückgibt.
 ![Übersicht: Der Nutzer fragt den Chatbot. Der Chatbot ruft Amazon Bedrock für das Modell auf und den MCP-Server für die Werkzeuge. Der MCP-Server führt SQL auf Amazon Athena aus, Athena liest aus Amazon S3.](/assets/img/text2sql_architecture.jpeg)
 
 
-{% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
+{% assign leer = "" | split: "," %}
+{% assign serie = site.categories['text2sql-agent-aws'] | default: leer | sort: 'date' %}
 
 <h2 class="section-heading">Erkenntnisse</h2>
 

@@ -18,7 +18,8 @@ Grundlage ist ein Proof of Concept, der Mietverträge per OCR einliest, entlang
 der Paragraphen zerlegt, Kopfdaten als Metadaten extrahiert und die Antworten
 mit Quellenangaben belegt.
 
-{% assign serie = site.categories['rag-auf-vertraegen-in-azure'] | sort: 'date' %}
+{% assign leer = "" | split: "," %}
+{% assign serie = site.categories['rag-auf-vertraegen-in-azure'] | default: leer | sort: 'date' %}
 
 <h2 class="section-heading">Erkenntnisse</h2>
 
