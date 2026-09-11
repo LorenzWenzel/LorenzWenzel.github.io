@@ -1,0 +1,16 @@
+# Reihenfolge hier = Reihenfolge auf der Startseite.
+- titel: "text2SQL-Agent auf AWS"
+  kategorie: text2sql-agent-aws
+  url: /text2sql-agent-aws/
+  beschreibung: >-
+    Ein Agent, der natürlichsprachige Fragen in SQL übersetzt und gegen Amazon
+    Athena ausführt — vom Rückgabeformat der Werkzeuge über die Herkunft des
+    Domänenwissens bis zum Prompt Caching.
+
+- titel: "RAG auf Verträgen in Azure"
+  kategorie: rag-auf-vertraegen-in-azure
+  url: /rag-auf-vertraegen-in-azure/
+  beschreibung: >-
+    Retrieval über deutschsprachige Mietverträge mit Azure AI Search und Azure
+    OpenAI — Chunking entlang der Paragraphen, hybride Suche, Reranking, und die
+    Frage, woran RAG bei Verträgen scheitert.
