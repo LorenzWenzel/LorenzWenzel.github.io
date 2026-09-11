@@ -38,8 +38,6 @@ verständlich zurückgibt.
 <ul class="todo-list">
   <li><strong>Wie misst man den Erfolg von text2SQL-Agenten?</strong> — Execution
   Accuracy, eigene Golden Queries, und der stille Fehler: plausible, aber falsche Zahlen.</li>
-  <li><strong>Bedrock AgentCore vs. Converse + MCP</strong> — zwei Wege, denselben
-  Agenten zu betreiben. Was gibt man auf, wenn man die Orchestrierung an AWS abgibt?</li>
   <li><strong>Wie kommt der Agent an die Tabellenschemata?</strong> — Glue Data Catalog,
   <code>INFORMATION_SCHEMA</code>, vorgerechnete Schema-Karten: Vergleich der Zugänge.</li>
 </ul>
