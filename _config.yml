@@ -1,0 +1,9 @@
+title: Lorenz Wenzel
+description: Ein Blog von Lorenz Wenzel
+theme: minima
+minima:
+  skin: classic
+show_excerpts: true
+
+plugins:
+  - jekyll-feed
