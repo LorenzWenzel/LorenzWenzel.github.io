@@ -9,6 +9,16 @@ Eine Serie über den Bau eines Agenten, der natürlichsprachige Fragen in SQL
 verständlich zurückgibt. Weniger Prompt-Kosmetik, mehr Messwerte: Was kostet
 eine Designentscheidung tatsächlich an Token, an Latenz und an Qualität?
 
+![Übersicht: Der Nutzer fragt den Chatbot. Der Chatbot ruft Amazon Bedrock für das Modell auf und den MCP-Server für die Werkzeuge. Der MCP-Server führt SQL auf Amazon Athena aus, Athena liest aus Amazon S3.](/assets/img/architektur-ueberblick.svg)
+
+**Bewusst vereinfacht.** Die Skizze zeigt nur die Bausteine, um die es in dieser
+Serie geht. Weggelassen ist alles, was zu einem echten Aufbau gehört, hier aber
+nichts erklären würde: Kubernetes und die Frage, worauf Chatbot und MCP-Server
+überhaupt laufen; VPC, Subnetze und Sicherheitsgruppen; IAM-Rollen und
+Berechtigungen; der Glue Data Catalog, aus dem Athena seine Tabellen kennt; und
+Lake Formation für Rechte auf Zeilen- und Spaltenebene. Jedes davon ist im
+Betrieb wichtig – für die Fragen dieser Serie ist es Beiwerk.
+
 {% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
 
 <h2 class="section-heading">Erschienen</h2>
