@@ -29,7 +29,8 @@
 }
 
 /* ---------------------------------------------------- Abschnittsueberschriften */
-.section-heading {
+.section-heading,
+.post-content h2.section-heading {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.13em;

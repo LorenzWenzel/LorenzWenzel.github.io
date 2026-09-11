@@ -9,7 +9,7 @@ Eine Serie über den Bau eines Agenten, der natürlichsprachige Fragen in SQL
 verständlich zurückgibt. Weniger Prompt-Kosmetik, mehr Messwerte: Was kostet
 eine Designentscheidung tatsächlich an Token, an Latenz und an Qualität?
 
-{%- assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' -%}
+{% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
 
 <h2 class="section-heading">Erschienen</h2>
 
@@ -20,7 +20,7 @@ eine Designentscheidung tatsächlich an Token, an Latenz und an Qualität?
     <span class="post-date">{{ post.date | date: "%d.%m.%Y" }}</span>
     <a class="post-link" href="{{ post.url | relative_url }}">{{ post.title | escape }}</a>
     {%- if post.excerpt %}
-    <p class="post-excerpt">{{ post.excerpt | strip_html | strip_newlines | truncate: 200 }}</p>
+    <p class="post-excerpt">{{ post.excerpt | strip_html | normalize_whitespace | truncate: 200 }}</p>
     {%- endif %}
   </li>
   {%- endfor %}
