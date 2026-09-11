@@ -1,9 +1,19 @@
 title: Lorenz Wenzel
-description: Ein Blog von Lorenz Wenzel
+description: Notizen zum Bauen von LLM-Agenten auf AWS
 theme: minima
+
+# Zeitzone, damit Beitragsdaten beim Build so interpretiert werden,
+# wie sie geschrieben sind. Ohne das baut GitHub in UTC und schluckt
+# Beitraege, deren Uhrzeit noch in der Zukunft liegt.
+timezone: Europe/Berlin
+
 minima:
   skin: classic
-show_excerpts: true
+  date_format: "%d.%m.%Y"
+
+# Nur diese Seite erscheint in der Kopfnavigation.
+header_pages:
+  - text2sql-agent-aws/index.md
 
 plugins:
   - jekyll-feed

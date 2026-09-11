@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Wieso MCP-Funktionen keine JSONs zurückgeben sollten"
-date: 2026-09-11 14:00:00 +0200
+date: 2026-09-11 08:00:00 +0200
 serie: "text2SQL-Agent auf AWS"
 ---
 

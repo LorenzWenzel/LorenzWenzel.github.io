@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Warum Prompt Caching bei text2SQL-Agenten Pflicht ist"
-date: 2026-09-11 20:00:00 +0200
+date: 2026-09-11 11:00:00 +0200
 ---
 
 Die meisten Empfehlungen zur Kostenoptimierung sind Abwägungen: etwas wird

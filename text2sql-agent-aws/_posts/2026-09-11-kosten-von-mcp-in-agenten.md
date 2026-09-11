@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Die versteckten Kosten von MCP in Agenten"
-date: 2026-09-11 18:00:00 +0200
+date: 2026-09-11 10:00:00 +0200
 ---
 
 Der Titel führt bewusst ein wenig in die Irre. Es geht hier nicht in erster

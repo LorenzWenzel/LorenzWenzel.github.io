@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Welche Historie bei einem Chatbot?"
-date: 2026-09-11 22:00:00 +0200
+date: 2026-09-11 12:00:00 +0200
 ---
 
 Ein Sprachmodell ist **vollständig zustandslos**. Es erinnert sich an nichts, es

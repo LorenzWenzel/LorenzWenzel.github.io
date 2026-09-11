@@ -9,33 +9,35 @@ Eine Serie über den Bau eines Agenten, der natürlichsprachige Fragen in SQL
 verständlich zurückgibt. Weniger Prompt-Kosmetik, mehr Messwerte: Was kostet
 eine Designentscheidung tatsächlich an Token, an Latenz und an Qualität?
 
-Die Serie arbeitet sich von unten nach oben durch den Stack – vom Format, in dem
-Daten den Agenten erreichen, über die Frage, woher er sein Domänenwissen bezieht,
-bis zur Wahl der Laufzeitumgebung.
+{%- assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' -%}
 
-## Erschienen
+<h2 class="section-heading">Erschienen</h2>
 
-{% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
-{% if serie %}
-<ul>
-{% for post in serie %}
+{% if serie.size > 0 %}
+<ul class="post-list-plain">
+  {%- for post in serie %}
   <li>
-    <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
-    <br><small>{{ post.date | date: "%-d. %B %Y" }}{% if post.excerpt %} — {{ post.excerpt | strip_html | truncate: 120 }}{% endif %}</small>
+    <span class="post-date">{{ post.date | date: "%d.%m.%Y" }}</span>
+    <a class="post-link" href="{{ post.url | relative_url }}">{{ post.title | escape }}</a>
+    {%- if post.excerpt %}
+    <p class="post-excerpt">{{ post.excerpt | strip_html | strip_newlines | truncate: 200 }}</p>
+    {%- endif %}
   </li>
-{% endfor %}
+  {%- endfor %}
 </ul>
 {% else %}
 <p><em>Noch nichts veröffentlicht.</em></p>
 {% endif %}
 
-## In Arbeit
+<h2 class="section-heading">In Arbeit</h2>
 
-Die folgenden Teile sind angelegt, aber noch nicht geschrieben:
+<p>Die folgenden Teile sind angelegt, aber noch nicht geschrieben:</p>
 
-- **Wie misst man den Erfolg von text2SQL-Agenten?** — Execution Accuracy,
-  eigene Golden Queries, und der stille Fehler: plausible, aber falsche Zahlen.
-- **Bedrock AgentCore vs. Converse + MCP** — zwei Wege, denselben Agenten zu
-  betreiben. Was gibt man auf, wenn man die Orchestrierung an AWS abgibt?
-- **Wie kommt der Agent an die Tabellenschemata?** — Glue Data Catalog,
-  `INFORMATION_SCHEMA`, vorgerechnete Schema-Karten: Vergleich der Zugänge.
+<ul class="todo-list">
+  <li><strong>Wie misst man den Erfolg von text2SQL-Agenten?</strong> — Execution
+  Accuracy, eigene Golden Queries, und der stille Fehler: plausible, aber falsche Zahlen.</li>
+  <li><strong>Bedrock AgentCore vs. Converse + MCP</strong> — zwei Wege, denselben
+  Agenten zu betreiben. Was gibt man auf, wenn man die Orchestrierung an AWS abgibt?</li>
+  <li><strong>Wie kommt der Agent an die Tabellenschemata?</strong> — Glue Data Catalog,
+  <code>INFORMATION_SCHEMA</code>, vorgerechnete Schema-Karten: Vergleich der Zugänge.</li>
+</ul>
