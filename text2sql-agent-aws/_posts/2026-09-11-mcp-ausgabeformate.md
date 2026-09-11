@@ -11,7 +11,13 @@ Tabellenauswahl. Mit Joins, die das Modell falsch herum baut. Womit man sich
 *nicht* beschäftigt, ist die Zeile Code, die das Abfrageergebnis in einen String
 verwandelt, bevor es zurück an das Modell geht.
 
-Genau die ist auf Dauer die teuerste Entscheidung im ganzen Agenten.
+Sie ist nicht der größte Posten auf der Rechnung – dafür gibt es dickere. Aber
+sie ist der billigste, den man loswird: Faktor 3 beim Tokenverbrauch des
+Resultsets, zu haben durch eine ausgetauschte Funktion. Keine
+Architekturentscheidung, kein Umbau, keine Abwägung.
+
+Fast keine jedenfalls. Es gibt Aufgaben, bei denen sich die teuren Token
+lohnen – nur sind es andere, als man vermutet.
 
 ![Ablaufdiagramm: Nutzerfrage geht an den Agenten auf Bedrock, von dort an den MCP-Server und an Athena. Der Rückweg führt über die Serialisierung des Resultsets ins Kontextfenster.](/assets/img/text2sql-pipeline.svg)
 
