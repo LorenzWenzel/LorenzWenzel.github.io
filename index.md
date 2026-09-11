@@ -5,9 +5,7 @@ layout: default
 <section class="hero">
   <h1 class="hero-title">Lorenz Wenzel</h1>
   <p class="hero-lead">
-    Notizen zum Bauen von LLM-Agenten auf AWS. Weniger Prompt-Kosmetik,
-    mehr Messwerte: was eine Designentscheidung wirklich an Token,
-    an Latenz und an Qualität kostet.
+    Notizen zum Bauen von KI Projekten in der Cloud. Hier fließen Erkenntnisse aus Arbeitsprojekten, privaten Projekten und Projekten aus selbstständiger Arbeit ein.
   </p>
 </section>
 

@@ -195,10 +195,6 @@ Tokenizer. Die Rangfolge bleibt, die Faktoren wackeln in der zweiten
 Nachkommastelle. Wer es für die eigene Tabelle genau wissen will, nimmt
 `messages.count_tokens`.
 
-Das Skript liegt unter
-[`assets/bench/format-tokens.py`](/assets/bench/format-tokens.py) – sechs Spalten,
-fester Seed, neun Formatter. Eigene Spaltennamen einsetzen und laufen lassen;
-bei breiten Tabellen fällt das Ergebnis deutlicher aus als hier.
 
 ---
 
