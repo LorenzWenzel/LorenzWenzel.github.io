@@ -13,7 +13,7 @@ verständlich zurückgibt.
 
 {% assign serie = site.categories['text2sql-agent-aws'] | sort: 'date' %}
 
-<h2 class="section-heading">Erschienen</h2>
+<h2 class="section-heading">Erkenntnisse</h2>
 
 {% if serie.size > 0 %}
 <ul class="post-list-plain">
