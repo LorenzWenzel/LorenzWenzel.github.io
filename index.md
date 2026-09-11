@@ -9,30 +9,40 @@ layout: default
   </p>
 </section>
 
-{%- assign serie = site.categories['text2sql-agent-aws'] -%}
-{%- assign serie_anzahl = serie | size -%}
-
 <h2 class="section-heading">Serien</h2>
 
 <ul class="card-list">
+  {%- for s in site.data.serien %}
+  {%- assign anzahl = site.categories[s.kategorie] | size %}
   <li>
-    <a class="card" href="{{ '/text2sql-agent-aws/' | relative_url }}">
-      <span class="card-kicker">Serie · {{ serie_anzahl }} Beiträge</span>
-      <span class="card-title">text2SQL-Agent auf AWS</span>
-      <span class="card-desc">Ein Agent, der natürlichsprachige Fragen in SQL übersetzt
-      und gegen Amazon Athena ausführt — vom Rückgabeformat der Werkzeuge über die
-      Herkunft des Domänenwissens bis zum Prompt Caching.</span>
+    <a class="card" href="{{ s.url | relative_url }}">
+      <span class="card-kicker">Serie · {% if anzahl > 0 %}{{ anzahl }} Beiträge{% else %}in Arbeit{% endif %}</span>
+      <span class="card-title">{{ s.titel }}</span>
+      <span class="card-desc">{{ s.beschreibung }}</span>
     </a>
   </li>
+  {%- endfor %}
 </ul>
 
-{%- assign andere = site.posts.size | minus: serie_anzahl -%}
+{%- comment -%}
+Beiträge, die zu keiner Serie gehören. Der Abschnitt erscheint nur, wenn es welche gibt.
+{%- endcomment -%}
+{%- assign serien_posts = 0 -%}
+{%- for s in site.data.serien -%}
+  {%- assign n = site.categories[s.kategorie] | size -%}
+  {%- assign serien_posts = serien_posts | plus: n -%}
+{%- endfor -%}
+{%- assign andere = site.posts.size | minus: serien_posts -%}
 {%- if andere > 0 %}
 <h2 class="section-heading">Weitere Beiträge</h2>
 
 <ul class="post-list-plain">
   {%- for post in site.posts -%}
-  {%- unless post.categories contains 'text2sql-agent-aws' %}
+  {%- assign in_serie = false -%}
+  {%- for s in site.data.serien -%}
+    {%- if post.categories contains s.kategorie -%}{%- assign in_serie = true -%}{%- endif -%}
+  {%- endfor -%}
+  {%- unless in_serie %}
   <li>
     <span class="post-date">{{ post.date | date: "%d.%m.%Y" }}</span>
     <a class="post-link" href="{{ post.url | relative_url }}">{{ post.title | escape }}</a>

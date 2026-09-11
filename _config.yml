@@ -14,6 +14,7 @@ minima:
 # Nur diese Seite erscheint in der Kopfnavigation.
 header_pages:
   - text2sql-agent-aws/index.md
+  - rag-auf-vertraegen-in-azure/index.md
 
 plugins:
   - jekyll-feed
