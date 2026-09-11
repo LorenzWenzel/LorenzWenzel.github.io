@@ -13,9 +13,9 @@ Classic*, läuft für Bestandskunden im Wartungsmodus weiter, bekommt keine neue
 Modelle und keine neuen Funktionen mehr
 ([AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/agents-classic-maintenance-mode.html)).
 
-Der native Weg heißt heute **AgentCore harness**. Und der andere Weg – Converse
-+ MCP – ist weniger „nativ", als sein Name klingt. Beides muss man erst einmal
-sauber definieren, sonst vergleicht man Werbetexte.
+Der native Weg heißt heute **AgentCore harness**. Und der andere Weg –
+Converse + MCP – ist weniger „nativ", als sein Name klingt. Beides muss man
+erst einmal sauber definieren, sonst vergleicht man Werbetexte.
 
 ## Was die beiden Wege wirklich sind
 
