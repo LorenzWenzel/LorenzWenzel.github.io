@@ -38,6 +38,4 @@ Mietverträgen — gebaut mit **Azure Document Intelligence**, **Azure OpenAI** 
 <ul class="todo-list">
   <li><strong>Wie werden „offene“ Fragen in RAG gelöst?</strong> — „Was steht in § 5?“
   beantwortet Top-k gut. „Welche Verträge laufen 2026 aus?“ strukturell gar nicht.</li>
-  <li><strong>RAG-Strategien bei Verträgen</strong> — Verweise, Anlagen, Fristen, und das
-  Problem, dass ein fehlender Paragraph eine Aussage ist.</li>
 </ul>
