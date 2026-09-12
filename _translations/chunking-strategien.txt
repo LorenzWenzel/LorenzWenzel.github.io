@@ -1,0 +1,253 @@
+---
+slug: chunking-strategien
+title: "Chunking Strategies"
+---
+
+The chunk is the unit everything in a RAG system revolves around. It's what gets
+embedded, what gets a score, what gets reordered, and what ends up in the prompt.
+And it's the decision hardest to take back: cut differently and you rebuild the
+index.
+
+This post works through the ways of cutting, the question of the right size, and
+two things that regularly get confused — whether chunks may differ in size, and
+what the number of vector dimensions has to do with it.
+
+## How large should a chunk be?
+
+There are two limits, and only the upper one is technical.
+
+The technical one: `text-embedding-3-small` accepts at most **8,191 tokens**. Put
+in more and you lose the rest — the Azure documentation warns explicitly about
+"data loss due to truncation."
+
+The real limit lies far below it, and Microsoft names it in a remarkably honest
+sentence:
+
+> Chunking is only required if the source documents are too large for the maximum
+> input size imposed by models, but it's also beneficial if content is poorly
+> represented as a single vector.
+
+*Poorly represented as a single vector* — that's the point. And to understand it
+you have to be clear about what happens during embedding.
+
+![Drei Panels nebeneinander. Links ein zu kleiner Chunk: der Vektor zeigt scharf auf ein einzelnes Thema, aber der Bezug fehlt. In der Mitte ein passender Chunk: ein Thema, vollständig, der Vektor zeigt scharf auf das richtige Thema. Rechts ein zu großer Chunk mit vier Themen: der Vektor ist der Mittelwert der vier Richtungen, kurz, und zeigt in keine davon.](/assets/img/chunking-verduennung.svg)
+
+**The vector always has 1,536 numbers.** Whether ten words go in or eight
+hundred. What changes isn't the length of the vector but where it points: it's
+averaged over everything in the chunk. A chunk with one topic points sharply at
+that topic. A chunk with four topics points at their average — and that lies close
+to everything and close to nothing.
+
+Going the other way there's the opposite movement. "Die Frist beträgt drei Monate
+zum Monatsende" is a sharp, precise sentence — and worthless as a chunk, because
+the referent was in the preceding sentence. Which deadline? Which contract?
+
+Microsoft's starting recommendation is **512 tokens with 25% overlap**. The POC
+sits higher at 800, which is defensible for contracts: a paragraph is a unit of
+meaning, and you don't like cutting through one.
+
+### "800 tokens" aren't 800 tokens
+
+Except the POC counts differently than the model. `SectionBuilder.py` uses its own
+regex:
+
+```python
+_TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+```
+
+The model uses `cl100k_base`. Both are called "tokens" and don't mean the same
+thing. Counted on a typical rental contract section:
+
+| | Tokens |
+|---|---:|
+| POC regex | 165 |
+| `cl100k_base` (model) | 313 |
+| **Factor** | **1.90** |
+
+The difference comes almost entirely from one property of German:
+
+| Word | POC | Model |
+|---|---:|---:|
+| `Betriebskostenvorauszahlung` | 1 | 10 |
+| `Heizkostenvorauszahlung` | 1 | 9 |
+| `Schönheitsreparaturen` | 1 | 8 |
+| `1.250,00` | 5 | 5 |
+
+The POC counts a compound as one token, the model breaks it into ten. So a chunk
+with `TARGET = 800` is around **1,520 tokens** to the model, and `MAX = 1000` is
+around 1,900.
+
+Here that's inconsequential — up to the 8,191 limit there's a factor of 4.3 of
+headroom. It would stop being inconsequential if someone set `TARGET = 6000`
+assuming that's "safely under 8,191": it would actually be around 11,400, and the
+remainder would vanish silently.
+
+## Four ways to cut
+
+![Vier Spalten zeigen denselben Mietvertrag mit sechs Paragraphen, viermal unterschiedlich geschnitten: nach fester Tokenzahl mit gleich großen Chunks und Schnitten mitten im Satz, am Paragraphen mit sehr ungleich großen Chunks, semantisch am Themenwechsel, und hierarchisch mit kleinen Kind-Chunks für die Suche und großen Eltern-Chunks für die Antwort.](/assets/img/chunking-vier-schnitte.svg)
+
+**Fixed token count.** Count to n, cut, continue. Predictable, uniform,
+structure-blind — the cut falls wherever the counter stands, mid-sentence if need
+be. In Azure AI Search this is the built-in variant: the
+[Text Split skill](https://learn.microsoft.com/en-us/azure/search/vector-search-how-to-chunk-documents)
+with `textSplitMode: pages`, controlled via `maximumPageLength` and
+`pageOverlapLength`. Microsoft's default suggestion there: 2,000 characters, 500
+characters of overlap. Characters, not tokens — the docs themselves point out the
+two don't coincide.
+
+**Cutting at the structure.** With contracts it's natural to cut at the `§`: a
+paragraph is a self-contained provision, the boundary is already marked in the
+document, and the author set it. The catch is the spread. § 1 (Mietsache) has
+forty tokens, § 3 (Miete und Nebenkosten) nineteen hundred. Pure §-cutting
+produces an index where chunks differ by a factor of fifty — more on that below.
+
+**Semantic.** Cut at the meaning rather than the form: embed sentences
+individually, compare consecutive sentences, and split where similarity drops.
+That finds topic changes even within a paragraph. The price shows up at index
+build time: one embedding call per sentence instead of per chunk.
+
+**Hierarchical.** Two levels: small chunks for the search, large ones for the
+answer. Retrieval goes through the precise child chunk, the parent chunk with the
+context goes into the prompt. That resolves the tension between "sharp vector" and
+"enough context" — not through a compromise but through two different objects.
+Azure AI Search has nothing built in for this; you model it with a field pointing
+at the parent section.
+
+### The custom strategy: none of the four, but two of them
+
+The POC does something that fits none of the four boxes, and that's the
+interesting part. It counts token-wise up to 800 — and then looks for a cut point
+that fits the structure, in this order:
+
+1. a **§ heading** within the next 150 tokens (`GRACE`)
+2. otherwise a **line start** within the next 80 (`LINE_SNAP`)
+3. otherwise a **sentence boundary** within the next 80 (`SENT_SNAP`)
+4. otherwise the same going backwards
+5. and finally, hard: never shorter than `MIN = 600`, never longer than
+   `MAX = 1000`
+
+The counting is fixed, the boundary is structural, the spread is capped. That's
+the sensible combination — and the last line matters more than it looks.
+
+On top of that comes a small thing with a large effect: a variable called `carry`
+that takes the most recently seen § heading along into the next chunk. A chunk
+from the middle of § 3 therefore still knows it came from § 3. Exactly the context
+problem from the left panel above, solved in two lines of code.
+
+## Overlap
+
+![Oben ohne Overlap: ein Satz wird von der Chunkgrenze zerschnitten, Chunk A endet mit „Die Kündigungsfrist beträgt", Chunk B beginnt mit „drei Monate zum Monatsende". Keiner der beiden beantwortet die Frage. Unten mit 100 Token Overlap beginnt Chunk B mit dem Ende von Chunk A und enthält den ganzen Satz. Rechts der Preis: der Index wächst um 12,5 Prozent im POC und um 25 Prozent bei der Microsoft-Empfehlung.](/assets/img/chunking-overlap.svg)
+
+Overlap is the insurance against the unlucky cut. Without it, a sentence can fall
+apart such that neither half answers the question — and worse, such that both
+vectors point away from the topic. With overlap, every passage appears at least
+once in full in the index.
+
+You pay in index size: the POC repeats 100 of 800 tokens, which is 12.5% more
+chunks; Microsoft's 128 of 512 is 25%. On top of that comes an effect you see in
+the hit list: the same sentence can sit in two chunks and be found twice. The
+POC's `per_doc_cap` exists precisely against that.
+
+One warning from the Azure docs is worth quoting: *"setting an overlap value
+that's too large can result in no overlap appearing at all"* — choose an overlap
+larger than half the chunk size and you get not more safety but none.
+
+## May chunks differ in size?
+
+This is the question where a misconception persists stubbornly. The short answer:
+**mathematically yes, without restriction.**
+
+An embedding model produces a fixed-length vector from text of any length — the
+variable number of tokens is pooled into a fixed number of dimensions. Ten words
+give 1,536 numbers, eight hundred words give 1,536 numbers. Cosine similarity
+additionally normalizes for vector length, so the magnitude carries no information
+at all. There is no arithmetic operation in vector search that fails on differing
+chunk sizes.
+
+**In substance it still isn't irrelevant** — but for the reason given above, not a
+mathematical one. The more a chunk contains, the more its vector is an average,
+and the closer it moves to the middle of the space. A very long and a very short
+chunk are not on equal footing in the same index: the long one is washed out, the
+short one sharp. If both fit the question, the short one systematically wins — not
+because it fits better, but because it contains less.
+
+From which follows the actual rule, and it's more precise than "the same size":
+
+> Differing sizes are unproblematic. **Unbounded** differences in size are not.
+
+`MIN = 600` and `MAX = 1000` in the POC are therefore not a formality but exactly
+that cap: a factor of 1.7 between the smallest and the largest chunk. Pure
+§-cutting would reach a factor of fifty. That's why the structural variant alone
+rarely suffices.
+
+### And do short questions still map onto long chunks?
+
+The question has eight tokens, the chunk eight hundred. Both go through the same
+model into the same space — that works, the models are trained for it. But the
+asymmetry leaves a trace: similarity between a short question and a long text
+tends to come out lower than between two texts of equal length, precisely because
+the long vector is averaged.
+
+For ranking that's initially inconsequential. The search compares candidates
+against each other, and an effect that hits all candidates equally doesn't change
+the order. It only becomes a problem when it **doesn't** hit them equally — which
+is, again, exactly when chunk sizes are far apart.
+
+Incidentally that's an argument for the hybrid search from the
+[retrieval post](/rag-auf-vertraegen-in-azure/2026/09/12/retrieval-varianten.html): BM25 has an
+explicit length normalization built in with `b = 0.75`. The vector side has
+nothing comparable. Combine the two and you get the length correction for free on
+at least one of them.
+
+## Are more dimensions better?
+
+![Gruppiertes Balkendiagramm mit drei Embedding-Modellen und zwei Benchmarks. MTEB englisch: ada-002 61,0, 3-small 62,3, 3-large 64,6. MIRACL mehrsprachig: ada-002 31,4, 3-small 44,0, 3-large 54,9. Der Abstand zwischen den Modellen ist auf dem mehrsprachigen Benchmark um ein Vielfaches größer als auf dem englischen. Darunter Dimensionen und Speicherbedarf je 10 000 Chunks.](/assets/img/chunking-dimensionen.svg)
+
+`text-embedding-3-small` delivers 1,536 dimensions, `3-large` delivers 3,072. The
+published numbers show two very different pictures, depending on which benchmark
+you look at.
+
+On **MTEB** (English) the three models lie 1.3 and 2.3 points apart. That's the
+difference for which double the storage hardly pays.
+
+On **MIRACL** (multilingual) it's 12.6 and 10.9 points. That's a different order
+of magnitude — and it's the column that counts for German contracts.
+
+On top of that, dimension count and model quality aren't the same thing at all.
+Both 3-series models can be shortened via the `dimensions` parameter, and
+according to OpenAI a `3-large` shortened to **256 dimensions** still beats an
+unshortened `ada-002` at 1,536. Dimensions are a dial for storage and latency, not
+the carrier of quality.
+
+### What more dimensions don't solve for contracts
+
+One thing doesn't change with any dimension count. `GUT57` is broken by the
+tokenizer into `['G', 'UT', '57']`, and that happens at 3,072 dimensions just as
+at 1,536 — it's a property of the tokenizer, not of the vector space. The property
+code that carries identity in rental contracts isn't found any better by a larger
+embedding model.
+
+For that case the lever isn't the dimension count but BM25 on the other side of
+the hybrid search. If you want to upgrade for contracts, upgrade sensibly for
+MIRACL — for the multilinguality, not for the vector width.
+
+## What I take from this
+
+**Chunk size isn't a tuning parameter but a decision about what constitutes a unit
+of answer.** For contracts that's the paragraph, and a paragraph is sometimes
+forty and sometimes nineteen hundred tokens long. Which is exactly why neither
+pure token counting nor pure §-cutting is the answer, but the combination: cut at
+the structure, cap the spread, carry the heading along.
+
+---
+
+**In short:** A chunk should contain one topic completely and no more — too large
+dilutes the vector into an average, too small strips it of its referent. Microsoft
+recommends 512 tokens with 25% overlap as a starting point; the POC sits at 800
+with 12.5%, where its 800 tokens are around 1,520 to the model, because German
+compounds are split differently. Chunks of differing size are mathematically
+entirely unproblematic — the vector is always the same length — but unbounded
+differences distort the ranking, which is why `MIN`/`MAX` are more than a
+formality. And more dimensions aren't better per se: for German contracts the
+multilingual benchmark counts, not the vector width, and the property code `GUT57`
+is found by BM25 anyway, not by the embedding.

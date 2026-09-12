@@ -1,0 +1,348 @@
+---
+slug: kosten-von-mcp-in-agenten
+title: "The Hidden Cost of MCP in Agents"
+---
+
+The title is deliberately a little misleading. This isn't primarily about the
+price of an MCP call, but about **how MCP actually works inside an agent**. The
+cost is merely the bill you eventually get for a misconception.
+
+The misconception goes roughly like this: *"The agent fetches the data via MCP."*
+
+It doesn't. And the difference between that picture and what really happens is
+the difference between one bill and one three times as large. I speak from
+experience :)
+
+## What really happens
+
+The model has no outputs. It can't call anything, open anything, write anywhere.
+Text goes in, text comes out — structured blocks, but text. Everything that looks
+like "the model did something" was in truth done by another program.
+
+![Architekturdiagramm: Amazon Bedrock links, Agent-Anwendung mit MCP-Client in der Mitte, MCP-Server und Athena rechts. Zwischen Bedrock und MCP-Server besteht keine Verbindung.](/assets/img/mcp-architektur.svg)
+
+The sequence in detail:
+
+1. The **agent application** — the host — sends Bedrock the conversation so far
+   plus a list of available tools.
+2. The model responds with `tool_use` blocks. That is **a request, not an
+   action**: "I'd like `run_query` with this SQL." The response ends with
+   `stop_reason: "tool_use"`, and with that this model call is finished and paid
+   for.
+3. The **MCP client** in the host reads that request and calls the corresponding
+   tool on the **MCP server** via the MCP protocol. The server talks to Athena,
+   Athena to S3.
+4. The result goes back to the host, which appends it to the transcript as a
+   `tool_result` block.
+5. And now the point of all this: the host starts a **completely new model call**
+   — with the entire transcript so far plus the new results.
+
+There is no wire between Bedrock and the MCP server. There isn't a secret one
+either. MCP is a protocol between the host and the tool provider; the model
+doesn't even know MCP exists. To the model they're simply tools in a list —
+whether they're served over MCP, a local function call or a carrier pigeon is all
+the same to it.
+
+**The model is stateless.** It remembers nothing. Every call is presented with the
+full transcript again, because there is no other way to tell it anything. What
+gets added in turn 2 is sent again — and paid for again — in turns 3, 4 and 5.
+
+## Tool calls are not model calls
+
+From this mechanism follows the rule that matters:
+
+> For an **n-step chain** you pay **n + 1 model calls.**
+
+n calls to request tools, plus one final one to turn the last result into an
+answer.
+
+The crucial part: **n is not the number of tool calls.** A single `tool_use` turn
+can contain arbitrarily many tools, which the host executes in parallel. Six tools
+in one round cost exactly as many model calls as one.
+
+![Zwei Ketten im Vergleich: oben sechs parallele Toolaufrufe zwischen zwei Modellaufrufen, unten sechs sequenzielle Toolaufrufe zwischen sieben Modellaufrufen.](/assets/img/mcp-kette.svg)
+
+Functionally the same thing happens top and bottom — six tools run, six results
+come back. On top it costs two model calls, at the bottom seven.
+
+**Breadth is free. Depth costs.** That's the whole rule, and it's the only lever
+that really moves anything.
+
+n only grows beyond 1 when the model has to *see* a result before it can
+formulate the next call. First fetch the table list, then the schema of the right
+table, then the query: three steps, four model calls. If you can fetch the table
+list and the schemas in one go, it's two steps. If a single tool delivers both
+together, it's one.
+
+## Why depth costs more than linearly
+
+Seven instead of two model calls sounds like a factor of 3.5. The arithmetic turns
+out worse, and the reason is the statelessness from above: every additional turn
+resends **everything so far**.
+
+In a chain of depth *n*, the first tool result is billed *n* times, the second
+*n−1* times, and so on. The billed transcript grows not with depth but with its
+square.
+
+![Säulendiagramm: Kosten je 1000 Fragen steigen von 13,49 Dollar bei Kettentiefe 1 auf 82,82 bei Tiefe 6. Eine gestrichelte Linie markiert 29,09 Dollar für dieselben sechs Tools in einer breiten Kette.](/assets/img/mcp-kettentiefe.svg)
+
+| Depth | Model calls | Tool calls | Transcript at full price | \$ / 1,000 questions |
+|---:|---:|---:|---:|---:|
+| 1 | 2 | 1 | 1,340 | 13.49 |
+| 2 | 3 | 2 | 3,900 | 22.32 |
+| 3 | 4 | 3 | 7,720 | 33.66 |
+| 4 | 5 | 4 | 12,800 | 47.53 |
+| 5 | 6 | 5 | 19,140 | 63.91 |
+| 6 | 7 | 6 | 26,740 | 82.82 |
+
+Double the depth from 4 to 8 and the transcript grows from 12,800 to 45,720
+tokens — a factor of 3.6, not 2. And the dashed line in the chart is the real
+argument: **the same six tools, called broad instead of deep, cost \$29.09 instead
+of \$82.82.** A factor of 2.8, without a single tool call being dropped.
+
+This is why prompt caching isn't an optimization here but the condition under
+which the table above looks that moderate at all. Without a cache, the prefix —
+system prompt, schemas, tool definitions — would be added at full price on *every*
+one of these calls.
+
+## What else rides along on every call
+
+The tool definitions. They sit in the `tools` parameter, right at the front, and
+they go over the wire again on every single model call.
+
+I rebuilt a realistic Athena MCP server — `run_query`, `list_tables`,
+`describe_table`, `get_query_status`, `cancel_query`, each with usable
+descriptions and JSON schema — and measured:
+
+| | Tokens |
+|---|---:|
+| `run_query` | 163 |
+| `list_tables` | 102 |
+| `describe_table` | 100 |
+| `get_query_status` | 87 |
+| `cancel_query` | 75 |
+| **Server total** | **527** |
+
+Around **105 tokens per tool**. That sounds harmless, but it scales with the
+number of connected servers:
+
+| Servers | Tools | Tokens in the prefix |
+|---:|---:|---:|
+| 1 | 5 | 527 |
+| 3 | 15 | 1,581 |
+| 5 | 25 | 2,635 |
+| 8 | 40 | 4,216 |
+
+Through the cache that costs little. Something else is dangerous: the tool list
+sits **at the beginning** of the cached prefix — the order is `tools` → `system` →
+`messages`, and any byte-level change invalidates everything behind it. An MCP
+server that reconnects and reports its tools in a different order thereby
+invalidates the cache for the entire rest of the prompt. Not a little:
+completely.
+
+The second effect is the selection itself. Forty tools are forty opportunities to
+grab the wrong one — and every wrong grab is another step in the chain.
+
+## How to shorten chains
+
+Ordered by effect.
+
+### 1. Cut tools more coarsely
+
+The most effective lever and the least often pulled. Three tools that deliver
+building blocks force three steps. One tool that answers the question needs one.
+
+The usual cut mirrors the AWS API one to one:
+
+```python
+list_tables(database)            # -> 120 Tabellennamen
+describe_table(database, table)  # -> Schema einer Tabelle
+run_query(sql, database)         # -> Resultset
+```
+
+For the question *"revenue by region last quarter"* that produces:
+
+```
+1  Modell  -> list_tables("analytics")
+2  Modell sieht 120 Namen      -> describe_table("fact_orders")
+3  Modell sieht das Schema     -> describe_table("dim_region")
+   (dass er die zweite Tabelle braucht, merkt er erst hier)
+4  Modell hat, was es braucht  -> run_query("SELECT ...")
+5  Modell                      -> Antwort
+```
+
+Depth 4, five model calls. Two of them — steps 2 and 3 — are pure procurement: the
+model makes no decision a program couldn't make too.
+
+So the program takes them over:
+
+```python
+@server.tool()
+def schema_fuer_frage(frage: str, max_tabellen: int = 5) -> str:
+    """Liefert die für eine Frage relevanten Tabellen samt Schema,
+    Partitionsschlüsseln und je drei Beispielzeilen."""
+    # Suche über die Tabellen- und Spaltenbeschreibungen aus dem Glue-Katalog.
+    # Embedding oder BM25 – Millisekunden, kein Modellaufruf.
+    treffer = katalog_suche(frage, k=max_tabellen)
+    return "\n\n".join(schema_als_csv(t) for t in treffer)
+```
+
+```
+1  Modell  -> schema_fuer_frage("Umsatz je Region im letzten Quartal")
+2  Modell sieht 3 Schemata      -> run_query("SELECT ...")
+3  Modell                       -> Antwort
+```
+
+| | Model calls | Transcript at full price | \$ / 1,000 questions |
+|---|---:|---:|---:|
+| fine-grained cut | 5 | 17,100 | 56.13 |
+| coarse cut | 3 | 8,700 | **31.92** |
+
+**43% cheaper — even though the first tool result is more than twice as large.**
+That's exactly the point: the problem isn't the token volume per result, it's the
+number of rounds it gets carried through.
+
+The rule behind it: *what a deterministic program can decide should not be decided
+by a model call.*
+
+There's a limit. A tool `beantworte_frage(frage)` would be the whole agent in one
+tool — you wouldn't have shortened the chains, only hidden them. Coarse-grained
+means: combine everything that requires **no** decision by the model. The choice
+of join stays with the model.
+
+### 2. Avoid artificial dependencies
+
+Tools whose inputs don't depend on each other shouldn't look as if they do.
+Otherwise the cut forces an order the task doesn't actually need.
+
+**The most expensive case: passing through Athena's asynchrony.** Athena's API is
+asynchronous by nature — start, poll status, fetch result. An MCP server that
+mirrors that one to one looks harmless:
+
+```python
+run_query(sql)         # -> {"query_execution_id": "abc-123"}   startet nur
+get_query_status(id)   # -> {"state": "RUNNING"}
+get_query_results(id)  # -> Resultset
+```
+
+With a query that runs for six seconds, this is what happens:
+
+```
+1  Modell -> run_query              -> ID
+2  Modell -> get_query_status       -> RUNNING
+3  Modell -> get_query_status       -> RUNNING
+4  Modell -> get_query_status       -> RUNNING
+5  Modell -> get_query_status       -> SUCCEEDED
+6  Modell -> get_query_results      -> Resultset
+7  Modell                           -> Antwort
+```
+
+Seven model calls, four of which say nothing but "still running." **\$40.82
+instead of \$17.09 per 1,000 questions — a factor of 2.4 for exactly the same
+query.** A language model as a polling loop is the most expensive wait loop you
+can build.
+
+The waiting belongs in the server:
+
+```python
+@server.tool()
+def run_query(sql: str, database: str, timeout_s: int = 60) -> str:
+    """Führt die Abfrage aus und wartet, bis sie fertig ist."""
+    qid = athena.start_query_execution(sql, database)
+    zustand = warte_bis_fertig(qid, timeout_s)   # Polling hier, nicht im Modell
+    if zustand == "TIMEOUT":
+        # Nur jetzt lohnt sich eine zweite Stufe – und nur dafür
+        # braucht das Modell die ID überhaupt zu sehen.
+        return f"Läuft noch. Später erneut abrufen mit query_execution_id={qid}"
+    return ergebnis_als_csv(qid)
+```
+
+**The second case: handles.** A return value that another tool demands as a
+required field chains the two together permanently:
+
+```python
+list_tables(database)                  # -> {"catalog_token": "xyz", "tables": [...]}
+describe_table(catalog_token, table)   # required: catalog_token
+```
+
+The token forces the order. Without it — and with a list instead of a scalar — the
+model can request all three schemas in **one** turn:
+
+```python
+describe_tables(database: str, tables: list[str])
+```
+
+| | Model calls | \$ / 1,000 questions |
+|---|---:|---:|
+| three schemas serially (handle forces it) | 4 | 30.06 |
+| three schemas in parallel | 2 | **17.93** |
+
+40% less, without dropping a single tool. One required parameter was removed.
+
+How to spot artificial dependencies in your own server:
+
+- A parameter is called `*_id`, `*_token`, `handle`, `session` or `cursor` — and
+  comes from another tool's output.
+- A tool is called `open_*`, `start_*` or `create_*` and has a `close_*`
+  counterpart.
+- A tool returns one page plus a cursor for the next. Every page is a step.
+- A tool takes a scalar where a list would work just as well.
+
+Each of these four points costs, in case of doubt, one model call per occurrence.
+
+### The remaining levers
+
+**Return all `tool_result` blocks in *one* message.** Spread the results of
+parallel calls across several messages and you quietly train the model out of
+parallel calls again — it learns from the transcript that this apparently isn't
+intended. An implementation detail with a direct effect on n.
+
+**Make the result smaller.** Every row a tool returns is billed again on every
+subsequent turn. A limit in the tool therefore acts multiplicatively with chain
+depth — more on that in
+[Why MCP Functions Shouldn't Return JSON](/text2sql-agent-aws/2026/09/11/mcp-ausgabeformate.html)
+
+**Clear old tool results from the transcript.** If step 1 only served to find the
+table name, its full result doesn't need to ride along in step 5. Context editing
+(`clear_tool_uses_20250919`) exists for that, removing old results instead of
+summarizing them.
+
+**With many servers: load tools on demand instead of declaring them all.** With
+`defer_loading: true` and a search tool, not all forty definitions sit in every
+call. One tool has to stay loaded, otherwise the API rejects the request.
+
+## One refinement
+
+There's a variant in which the MCP client doesn't run in your own host but on the
+API side — you specify the server URL in the request and Anthropic's
+infrastructure takes over the client part.
+
+That changes **nothing** about any of the above. It merely shifts who operates the
+client. The model still calls nothing, the results still land as blocks in the
+transcript, and an n-step chain is still billed as n + 1 inferences. Anyone
+expecting a saving from this has only moved the misconception from the opening one
+level deeper.
+
+## Method
+
+The chain model is in the repo at
+[`assets/bench/mcp-ketten.py`](/assets/bench/mcp-ketten.py). Assumptions: prefix
+15,527 tokens (system prompt, schemas, tool definitions), one tool result 1,200
+tokens, prices for Claude Sonnet 5 (\$2.00 per million input tokens, \$0.20 cache
+read, \$10.00 output). The tool definitions were counted with
+`tiktoken`/`o200k_base`; for exact values on Claude models use
+`messages.count_tokens`. Bedrock has its own pricing.
+
+The model computes a clean chain without failed attempts. Real agents grab the
+wrong thing, get Athena errors back and try again — each of those attempts is
+another step. The numbers above are the lower bound.
+
+---
+
+**In short:** MCP delivers no data to the model. The model expresses a wish, the
+host carries it out via the MCP client, and afterwards a new model call begins
+with the grown transcript. Tool calls are therefore cheap and model calls
+expensive: an n-step chain costs n + 1 inferences, and because each of them
+carries the entire transcript again, the bill grows quadratically with depth. To
+cut costs you don't remove tools — you put them side by side instead of one after
+another.

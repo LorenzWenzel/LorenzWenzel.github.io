@@ -1,0 +1,260 @@
+---
+slug: domaenenwissen-mcp-oder-rag
+title: "Domain Knowledge via MCP or via RAG?"
+---
+
+Up front, so it's clear what this is **not** about: this text does not explain RAG
+again. Nor does it examine the specifics of the Bedrock Knowledge Base — no
+chunking strategies, no vector engine, no question of whether OpenSearch
+Serverless or Aurora sits underneath. Those are implementation details.
+
+The question here sits one level above and is independent of the concrete
+retrieval technique: **where does the agent get the knowledge when it needs it —
+and who decides that it needs it?**
+
+## Why that matters more than any format question
+
+The [comparison of table formats](/text2sql-agent-aws/2026/09/11/mcp-ausgabeformate.html)
+was about a factor of 3 in token consumption. This is about an order of magnitude
+more.
+
+The BIRD benchmark ships a short piece of domain knowledge with every question —
+the explanation of what a metric actually means in the given data set. Take it
+away and GPT-4 falls from **54.89% to 34.88%** execution accuracy
+([BIRD](https://arxiv.org/pdf/2305.03111)). Twenty percentage points, for one
+sentence.
+
+That's the most important number in this post, and it doesn't yet answer the
+question of which variant to pick. It only says: domain knowledge isn't an
+optimization, it's half the system. An agent that doesn't know "revenue" means net
+in controlling and gross in sales writes syntactically perfect, factually wrong
+SQL — and doesn't notice.
+
+## The variants
+
+There are three routes. I measure them against a zeroth variant that nobody
+seriously recommends, but which is the most useful yardstick.
+
+**Variant 0 — everything in the system prompt.** The entire corpus sits in the
+prefix. No retrieval, no decision, no failure mode. The yardstick.
+
+**Variant 1 — RAG up front into the system prompt.** Before the first model call,
+a retrieval stage runs over the user question and places the best hits in the
+prompt. The model sees ready-prepared knowledge and doesn't know retrieval
+happened.
+
+**Variant 2 — RAG behind an MCP function.** The agent gets a tool
+(`kennzahl_nachschlagen`) and decides for itself whether and with what to call it.
+
+**Variant 3 — table of contents instead of RAG.** No vector index. The prefix
+contains a directory of the corpus — file names with a one-line description each
+— and the agent loads entire documents on demand via MCP.
+
+In all four variants, **prompt caching is active**. That isn't a nicety but a
+precondition: without a cache, the bill is decided purely by prefix size and
+everything else would be cosmetics.
+
+## Which model calls does what trigger?
+
+This is where the actual difference between the variants lies, and it's rarely
+separated cleanly. There are two kinds of model calls:
+
+- **Calls of the SQL search chain.** Build the query, process Athena's error
+  message, correct it, turn the result into an answer. These calls are inherent to
+  the problem. They occur equally in every variant.
+- **Calls triggered by the domain knowledge.** The agent notices something is
+  missing, calls a tool, reads the result, decides anew. These calls are a
+  consequence of the architecture — and avoidable.
+
+![Vier Varianten im Vergleich: Variante 0 und 1 mit drei Modellaufrufen der SQL-Kette, Variante 2 mit einem zusätzlichen Wissensaufruf davor, Variante 3 mit zwei.](/assets/img/domaenenwissen-aufrufe.svg)
+
+Variants 0 and 1 pay zero additional calls: the knowledge is already there when
+the model first thinks. Variant 2 costs one, variant 3 at least two — first read
+the directory, then request the file, often a second one on top.
+
+One detail that gets underestimated in back-of-envelope math: **an early extra
+call is more expensive than a late one.** Whatever enters the transcript in turn 1
+is billed again on every subsequent turn. The document loaded in variant 3 travels
+along through the entire remaining SQL chain.
+
+## The arithmetic
+
+A realistic scenario: system prompt and schemas 15,000 tokens, corpus 250,000
+tokens, RAG hits 4,000, a whole document 8,000, an Athena result set 3,000 (CSV,
+as recommended in the format comparison), three calls for the SQL chain. Cache
+read costs 10%, cache write 125% of the input price.
+
+![Gestapelte Balken: Kosten je 1000 Fragen. Variante 0: 195,24 Dollar. Variante 1: 69,24. Variante 2: 80,80. Variante 3: 183,50.](/assets/img/domaenenwissen-kosten.svg)
+
+| Variant | Model calls | Cache read | Full price | \$ / 1,000 questions |
+|---|---:|---:|---:|---:|
+| 0 Everything in the system prompt | 3 | 795,000 | 10,620 | 195.24 |
+| 1 RAG into the system prompt | 3 | 45,000 | 22,620 | **69.24** |
+| 2 RAG behind an MCP function | 4 | 62,400 | 24,160 | 80.80 |
+| 3 Index + file retrieval | 5 | 90,500 | 70,200 | 183.50 |
+
+Two things about this surprised me.
+
+**Variant 2 is barely more expensive than variant 1** — a 17% surcharge for an
+additional model call. The cache carries the prefix so cheaply that another turn
+hardly registers. Without caching, this row would look completely different.
+
+**Variant 3 is almost as expensive as the zeroth variant** — but for an entirely
+different reason. In variant 0, \$159 of the \$195 sit in the cache read of the
+huge prefix. In variant 3, \$140 of \$183 sit in the *conversation history*: two
+complete documents dragged through five turns, at full price. Same amount,
+opposite cause.
+
+## The trap in variant 1
+
+Variant 1 wins the table — but only if you build it right, and the obvious
+implementation is the wrong one.
+
+Prompt caching is a **prefix comparison**. Caching happens in the order `tools` →
+`system` → `messages`, and any byte-level change invalidates everything behind it.
+Write the per-question retrieved chunks into the system prompt — which the
+variant's name suggests — and you change the prefix on every single request. The
+cache hit rate falls to zero, and \$69 quickly becomes the \$195 of the zeroth
+variant.
+
+The hits have to go **behind** the last cache breakpoint, that is, into the user
+message. Functionally that's the same knowledge at the same place in context; in
+billing terms it's the difference between the best and the worst variant. There's
+only one place to verify it: `usage.cache_read_input_tokens`. If that permanently
+reads zero, an invalidator is at work in the background.
+
+## The trap in variant 0
+
+The \$195 of the zeroth variant only hold under dense traffic. The prefix has to be
+written before it can be read, and a cache write costs 125% of the input price:
+265,000 tokens are **\$0.66 per write**. If the cache expires in between, you pay
+again.
+
+| Questions per cache window | Surcharge per 1,000 questions |
+|---:|---:|
+| 5 | + \$132.50 |
+| 20 | + \$33.12 |
+| 100 | + \$6.62 |
+
+For an agent under continuous load this amortizes. For one used by twelve
+controllers spread across the day, it doubles the bill. **Request density is a
+first-order cost variable in variant 0** — and it appears in no architecture
+diagram.
+
+## What the research says
+
+On the core question — put knowledge into the context up front, or let the agent
+reach for it afterwards — there are solid comparative numbers, though not from the
+text2SQL corner.
+
+On the LOCOMO benchmark, full context reaches **72.9%**, tool-based access
+**66.9%** — six points apart. Those six points are paid for with **91% higher P95
+latency and ten times the tokens**
+([overview](https://usewire.io/blog/memory-as-tools-2026-agent-memory-pattern/)).
+For simple questions a single retrieval pass remains 3 to 5 times cheaper, at a
+small quality gap
+([agentic retrieval](https://usewire.io/blog/agentic-retrieval-techniques/)).
+
+So the picture is clearer than the debate suggests:
+
+1. **Whether domain knowledge is present decides ~20 points.**
+2. **How it is delivered decides ~6.**
+
+The first question is three times as important as the second. If you don't yet
+have a curated corpus, don't think about variants — write down definitions.
+
+The pattern emerging for production is a hybrid: the retrieval loop narrows the
+corpus to a working set, which the model then reasons about within a window.
+Translated: the twenty most-used metric definitions fixed in the cached prefix,
+the long tail behind the tool.
+
+## What it depends on
+
+The choice of variant can't be settled in general, but the variables it hangs on
+are manageable:
+
+| If … | that argues for |
+|---|---|
+| the corpus stays under ~30,000 tokens | **variant 0** — nothing beats "it's already there" |
+| requests are rare and spread across the day | **1 or 2** — variant 0 bleeds itself dry on cache writes |
+| the knowledge changes frequently | **2 or 3** — changes don't touch the prefix |
+| retrieval hit rate is uncertain | **2** — only here can the agent follow up |
+| documents lose their meaning when chunked | **3** — whole file instead of fragment |
+| a hard latency budget applies (< 5 s) | **0 or 1** — no additional rounds |
+| traceability is required (audit, sign-off) | **2 or 3** — the tool call is the audit trail |
+| the knowledge splits into a few clearly named documents | **3** — then a directory is more honest than a vector index |
+
+Two of these rows get routinely overlooked. The **rate of change**: keep
+definitions in the prefix and every correction invalidates the cache for all
+running sessions. And the **ability to follow up**: variant 1 fails silently. If
+retrieval delivers the wrong chunk, the model sees no problem — it doesn't know a
+search happened. In variant 2 it can notice the failure and ask differently. That
+property appears in no cost table and is often the decisive one in operation.
+
+## Recommendation
+
+**Start with variant 1, plan for variant 2.**
+
+Variant 1 is the cheapest, the fastest to build, and demands no tool discipline
+from the model. For a first production system that's enough — on the condition
+that the hits land behind the cache breakpoint.
+
+Variant 2 costs 17% more and buys three things that only show up in operation: the
+agent can follow up when the first hit is useless; knowledge changes don't
+invalidate the cache; and every tool call is a log line with which a wrong answer
+can be explained after the fact. Measured against what an undetected wrong revenue
+report costs, 17% is not a price.
+
+Variant 3 I'd only choose if the corpus really does consist of a few cleanly named
+documents that mustn't be cut up. Then a directory is more honest than a vector
+index — you see what you get. Otherwise it's the most expensive and slowest
+variant.
+
+Variant 0 isn't a stopgap; with a small corpus and dense traffic it's the best
+choice. It just doesn't scale: from around 50,000 tokens the prefix starts costing
+quality too — the more irrelevant text rides along, the more distraction.
+
+## What this arithmetic can't do
+
+The biggest weakness of the model above: **it holds the SQL search chain fixed at
+three calls — and that's exactly what good domain knowledge changes.**
+
+If better knowledge saves a single failed SQL attempt, costs drop by 31 to 43%
+depending on the variant:
+
+| Variant | 3 SQL calls | 2 SQL calls |
+|---|---:|---:|
+| 0 Everything in the system prompt | 195.24 | 123.16 |
+| 1 RAG into the system prompt | 69.24 | 39.16 |
+| 2 RAG behind an MCP function | 80.80 | 49.60 |
+| 3 Index + file retrieval | 183.50 | 126.80 |
+
+The gap between variant 1 and 2 is 17%. One saved failed attempt is worth two to
+three times that. **Choose the variant by the cost table instead of by the hit
+rate and you're optimizing the wrong quantity.** The table says what a variant
+costs if everything else stays equal — and with domain knowledge nothing stays
+equal, that's the whole point.
+
+Which is why the closing recommendation is the same as the opening one: first
+measure whether the knowledge arrives, then calculate what it costs.
+
+## Method
+
+The cost model is in the repo at
+[`assets/bench/domaenenwissen-kosten.py`](/assets/bench/domaenenwissen-kosten.py)
+— all assumptions sit at the top of the file and can be overwritten with your own
+numbers. Prices: Claude Sonnet 5 at list, \$2.00 per million input tokens, \$0.20
+cache read, \$2.50 cache write, \$10.00 output. Bedrock has its own pricing.
+
+The model counts tokens, not quality. The quality claims come from the linked
+sources and were not re-measured on my own data set — that would be a topic of its
+own.
+
+---
+
+**In short:** Whether domain knowledge is present at all is worth around twenty
+percentage points; how it's delivered, around six. Variant 1 is the cheapest, but
+only if the hits land behind the cache breakpoint — otherwise it becomes the most
+expensive. Variant 2 costs 17% more and buys follow-up capability, decoupling, and
+an audit trail. And the biggest lever lies elsewhere anyway: knowledge that
+prevents a failed SQL attempt saves more than any choice of variant.

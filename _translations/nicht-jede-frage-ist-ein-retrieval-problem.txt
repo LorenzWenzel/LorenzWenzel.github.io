@@ -1,0 +1,190 @@
+---
+slug: nicht-jede-frage-ist-ein-retrieval-problem
+title: "Not Every Question Is a Retrieval Problem"
+---
+
+"What does § 5 of contract GUT57 say?" — RAG answers that well. "Which unit has
+the highest rent?" — RAG does not answer that, and not because the search is bad,
+but because it isn't a search question.
+
+This post traces the boundary: which questions are retrieval problems, which
+aren't, how to tell the difference — and what to do with the others.
+
+## What retrieval is built for
+
+Top-k is a bet. It reads: *the answer sits in a few places in the corpus, and the
+search finds those places.* Ask for the termination clause of a specific contract
+and you win the bet — there is exactly one such chunk, it carries the property
+code, BM25 finds it, the reranker lifts it to the top. One chunk into the prompt,
+done.
+
+Research calls this question **local**: it targets one location. And for local
+questions the whole pipeline from the previous posts — chunking, hybrid search,
+reranking — is the right answer.
+
+## Where the bet is lost
+
+![Zwei Raster aus zwölf Verträgen mal sechs Paragraphen. Links die lokale Frage nach § 5 von GUT57: genau eine Zelle leuchtet, Top-k findet sie. Rechts die globale Frage nach der höchsten Miete: in allen zwölf Verträgen leuchtet § 3, alle mit ähnlichem Score. Top-3 greift drei davon heraus — eine Stichprobe, keine Antwort.](/assets/img/offene-fragen-lokal-global.svg)
+
+Rental contracts are not a heterogeneous body of knowledge where four chunks fit a
+question and a thousand don't. They are **homogeneous**: every contract has a rent
+paragraph, every one a termination clause, every one a deposit. Ask about "Miete"
+and you get twelve hits with twelve similar scores — and top-3 pulls three of them
+out, sorted by wording, not by amount.
+
+That isn't a failure of the search. The search found what it was supposed to find.
+The answer just isn't in any of the twelve chunks. It only arises from comparing
+all twelve.
+
+Microsoft's GraphRAG paper (Edge et al., 2024) describes exactly this case: *"RAG
+fails on global questions directed at an entire text corpus."* The authors call it
+query-focused summarization — a question that doesn't need retrieving but
+summarizing. With contracts the problem appears in three forms, and they differ in
+difficulty.
+
+**Comparison and aggregation.** "Highest rent," "average term," "how many
+contracts with a graduated rent." Needs the whole population. On top comes a
+technical twist: the number 1,250 isn't searchable by BM25 at all — numeric fields
+are excluded from full text in Azure AI Search — and an embedding can't order
+numbers. "Greater than" does not exist in vector space.
+
+**Calculation.** "Whose rent can I index in the next two weeks?" The date that *is*
+the answer appears in no contract. It follows from lease start, indexation
+interval and today's date. Retrieval can find a passage of text. It cannot find a
+passage that doesn't exist.
+
+**Absence.** "Which contracts have *no* indexation clause?" You cannot retrieve the
+absence of a paragraph. There is no chunk stating that something isn't in there.
+That's the hardest of the three forms, and with contracts it's legally relevant: if
+no graduated rent is agreed, none applies — a solid statement that no top-k can
+deliver.
+
+## The options
+
+### Structure first, then ask
+
+![Oben die Ingestion: ein Vertrag geht in eine Extraktion und wird zu einer typisierten Tabellenzeile mit Objekt, Einheit, Miete als Zahl, Indexierungsklausel als Ja/Nein und nächstem Indexierungsdatum. Unten die Abfrage: „Welche Einheit hat die höchste Miete?" wird zu orderby rent desc top 1, „Wer kann in zwei Wochen indexiert werden?" zu einem Datumsfilter. Kein Retrieval, kein Score.](/assets/img/offene-fragen-strukturieren.svg)
+
+For homogeneous corpora this is the state of the art, and the idea is so simple
+it's easy to underestimate: **the model's work moves from question time to index
+build time.** Once per contract, a model reads the text and fills a schema — rent
+as a number, lease start as a date, indexation clause as yes/no, next indexation
+date computed. After that, "highest rent" is no longer a search question but a
+query:
+
+```
+search=*
+$orderby=meta/rent desc
+$top=1
+```
+
+No retrieval, no score, no model. And the absence question that retrieval
+structurally cannot answer becomes trivial:
+`$filter=meta/index_clause eq false`.
+
+Azure brings both halves. For the extraction there is, besides a hand-written LLM
+prompt, now
+[Content Understanding](https://learn.microsoft.com/en-us/azure/ai-services/content-understanding/document/overview),
+which addresses exactly this case — the docs cite extracting *"contractual
+parties, renewal dates, and payment terms in legal agreements"* as an example, with
+typed fields that are normalized automatically, and with confidence plus source
+grounding per field so uncertain values go to a human. For the query side, Azure AI
+Search has
+[`$filter` and `$orderby`](https://learn.microsoft.com/en-us/azure/search/search-filters)
+on fields marked `filterable`/`sortable`, and since the 2026-08-01 preview also
+facet aggregations: `sum`, `avg`, `min`, `max`, `cardinality` directly in the
+search service. Whether you keep the numbers there or in a real database is then a
+question of volume, not of principle.
+
+The price: **the schema must have anticipated the question.** Extract "rent" but
+not "service charge advance" and you're without an answer again on the next
+question. And once per contract means: if the schema changes, the extraction runs
+across the entire corpus again.
+
+### Map-reduce across all contracts
+
+For questions the schema doesn't know, the expensive route remains: fetch the
+relevant chunk for every contract, have the model extract the value, and end with
+one call that compares the n results. That is essentially what GraphRAG does with
+its community summaries, just without the graph — with a homogeneous corpus the
+contract itself is already the unit you iterate over.
+
+It works, it's complete, it needs no schema. And it costs **n + 1 model calls per
+question**. With fourteen contracts that's a rounding error. With fourteen hundred
+it's a reason to put the question into the schema after all.
+
+### Routing: the question picks the path
+
+![Eine Frage geht in einen Router. Drei Wege: Retrieval für lokale Fragen mit einem Modellaufruf pro Frage; Strukturabfrage für vorhergesehene globale Fragen mit null bis einem Aufruf; Map-Reduce über alle Verträge für unvorhergesehene globale Fragen mit n plus eins Aufrufen.](/assets/img/offene-fragen-drei-wege.svg)
+
+That gives three paths, and the real architectural question is who decides which
+one is taken. Today the answer is almost always: **the model itself, via tools.** A
+tool `suche_vertragstext`, a tool `frage_tabelle`, and the model chooses. A local
+question lands in retrieval, a global one in the structured query.
+
+Anyone who read the
+[text2SQL series](/text2sql-agent-aws/) will recognize this:
+once the contracts are structured, "which unit has the highest rent?" *is* a
+text2SQL question. The two architectures aren't alternatives but two halves of the
+same system — retrieval for the text, SQL for the numbers inside it.
+
+## How I tried it
+
+The POC goes part of this way, and it's worth saying precisely which part.
+
+At index build time, GPT-4.1-nano reads the contract header — the first two
+sections, capped at 8,000 characters — with `temperature = 0` and a system prompt
+that prescribes normalizations and demands `null` when in doubt. The result lands
+as `meta` in the search index: property code, unit codes, street, house number,
+postal code, city, tenant, lease start, end of the fixed term. The fields are
+declared `filterable` and partly `sortable`.
+
+At query time, retrieval runs first, then `filter_chunks_iterative_exact`: a
+substring match of the question against the meta fields, field by field, narrowing
+the candidates to the contract the question names. If `GUT57` appears in the
+question, only GUT57 chunks remain.
+
+That's an instance of "structure first, then ask" — but for **identity**, not for
+**content**. It answers the question "which contract is meant?", and that's exactly
+where local questions otherwise fail on the property code. For that it works well.
+
+It does not answer the two questions from the opening, and the reasons are
+instructive:
+
+- **The schema doesn't know the rent.** It contains what you need to *find* a
+  contract — not what you need to *compare* contracts. No amount, no indexation
+  clause, no interval.
+- **The filter runs after retrieval.** It narrows the 22 or 60 candidates the
+  search delivered. A contract that didn't make it into the candidates cannot be
+  filtered in. The index attributes `filterable` and `sortable` are set, but
+  `$filter` and `$orderby` are never called — the structure is there, it just isn't
+  used as structure.
+- **The data are strings.** `start_date` and `fixed_term_end` are of type `String`,
+  not `DateTimeOffset`. You can't filter a date range on that, and you can't
+  compute a deadline.
+
+The way forward from here is shorter than it sounds: extend the schema with typed
+fields (`rent: Double`, `index_clause: Boolean`, `next_index: DateTimeOffset`), run
+the extraction across the whole contract instead of only the header, and pose the
+question as a structured query *before* retrieval when it is one. The router is
+still missing entirely — in the POC every question takes the same path.
+
+## What I take from this
+
+**The question of whether a question is a retrieval problem has to be asked before
+retrieval.** Don't ask it, and for global questions you get a sample that looks
+like an answer — three contracts with rent figures, neatly cited, and the most
+expensive one missing. That's the more dangerous failure than no answer at all.
+
+---
+
+**In short:** Retrieval answers local questions — the answer sits in one place,
+top-k finds it. On homogeneous corpora like rental contracts, three question types
+fail structurally: comparison and aggregation (needs every contract, and numbers
+are neither searchable nor orderable), calculation (the answer appears in no text)
+and absence (you can't find what's missing). The state of the art is to have the
+model fill a typed schema at index build time and then pose global questions as
+`$filter`/`$orderby` or SQL — zero model calls instead of n + 1. A router, usually
+the model itself via tools, picks the path. The POC already structures, but only
+the identity, only from the contract header, and it uses the structure after
+retrieval rather than before.

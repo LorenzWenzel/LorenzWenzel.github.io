@@ -1,0 +1,160 @@
+---
+slug: prompt-caching-pflicht
+title: "Why Prompt Caching Is Mandatory for text2SQL Agents"
+---
+
+Most cost-optimization advice involves a trade-off: something gets cheaper,
+something else gets worse. Prompt caching doesn't. For a text2SQL agent there is
+no case in which you're better off without it — and the reason isn't that it
+saves a lot eventually, but that it saves **from the very first tool call**.
+
+## Why this agent in particular
+
+A text2SQL agent has the most favorable prompt structure there is: one large,
+completely static block — system prompt, table schemas, tool definitions — and in
+front of it a short question that differs with every request. Fifteen thousand
+tokens that never change, against forty that always do.
+
+And then there's the property that decides everything: **every tool call produces
+a new model call.** How exactly that works is covered in
+[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/09/11/kosten-von-mcp-in-agenten.html)
+— in short: the model only *requests* a tool, execution happens elsewhere, and
+the result starts a fresh inference. An n-step chain costs n + 1 model calls.
+
+Which means the same unchanged prefix goes over the wire several times for a
+single user question. That is exactly what caching is built for.
+
+## How Bedrock does it
+
+Bedrock distinguishes two forms. **Implicit caching** tries to reuse identical
+prefixes on its own — no configuration, but explicitly *best effort*: an
+identical prompt guarantees no hit. **Explicit caching** you set yourself, with a
+`cachePoint` in the Converse API or `cache_control` in InvokeModel. For an agent
+whose bill depends on it, you want the explicit variant.
+
+![Diagramm: die drei Blöcke tools, system und messages nebeneinander, der Cache-Breakpoint sitzt hinter system. Eine Änderung in tools entwertet system und messages gleich mit.](/assets/img/caching-praefix.svg)
+
+The order is fixed: `tools` → `system` → `messages`. Three things follow that you
+need to know:
+
+**The minimum size counts cumulatively.** Claude Sonnet 5 requires 1,024 tokens
+per checkpoint — but the count runs across all three sections together, not per
+section. An agent with schemas in the system prompt is always above it. Stay
+below and you get no error, just silently no cache.
+
+**A change at the front invalidates everything behind it.** If `tools` changes,
+`system` and `messages` are invalidated along with it. That's the same mechanism
+that appears as a risk in the MCP post: an MCP server that reports its tools in a
+different order costs you the entire cache — not proportionally, completely.
+
+**The TTL restarts on every hit.** That's the pleasant surprise in the
+documentation: as long as the agent is running, the cache keeps itself alive for
+free. Five minutes is the default, one hour can be requested via `"ttl": "1h"`.
+For an agent under continuous load the five minutes suffice, because they keep
+extending.
+
+Two more limits: at most four checkpoints per request, and caching only exists
+for on-demand inference — not with the batch API.
+
+## The arithmetic
+
+A cache write costs 1.25× the normal input price, a cache read one tenth. The
+break-even follows almost by itself: writing costs a one-off 25% surcharge, every
+read saves 90%. So you only have to reuse the prefix **once** to come out ahead.
+
+And a single tool call means two model calls.
+
+![Säulendiagramm: ohne Caching 76 bis 361 Dollar je 1000 Fragen, mit Caching 54 bis 154; die Ersparnis wächst von 29 auf 57 Prozent.](/assets/img/caching-ersparnis.svg)
+
+| Model calls | without caching | with caching | saved |
+|---:|---:|---:|---:|
+| 2 (one tool call) | 76.33 | 54.12 | 29.1% |
+| 3 | 116.78 | 63.83 | 45.3% |
+| 4 | 160.00 | 76.31 | 52.3% |
+| 6 | 254.76 | 109.59 | 57.0% |
+| 8 | 360.62 | 153.95 | 57.3% |
+
+Dollars per 1,000 questions, Claude Sonnet 5, same prefix, same chain.
+
+The only case in which caching costs money is the one where the agent **uses no
+tool at all** — then you pay a 25% surcharge for a cache nobody ever reads. With
+a text2SQL agent that case doesn't occur. Hence: mandatory, not optimization.
+
+More interesting than the saving is the **shape of the curve**. Without caching,
+costs rise 4.7× going from 2 to 8 model calls; with caching only 2.8×. Caching
+doesn't merely lower the level — it takes the compounding out of the chain.
+
+## Which models on Bedrock can do it
+
+The list of models with **explicit** prompt caching is short and consists
+essentially of two families
+([AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)):
+
+| Family | Models | Minimum tokens | TTL |
+|---|---|---:|---|
+| Anthropic | Claude Fable 5.1 / 5, Opus 5 | 512 | 5 min, 1 h |
+| | Claude Opus 4.8 | 1,024 | 5 min, 1 h |
+| | **Claude Sonnet 5**, Sonnet 4.6, Sonnet 4.5 | 1,024 | 5 min, 1 h |
+| | Claude Opus 4.7 / 4.6 / 4.5, Haiku 4.5 | 4,096 | 5 min, 1 h |
+| | Claude 3.7 Sonnet | 1,024 | 5 min |
+| OpenAI | GPT-5.6 Sol / Terra / Luna | 1,024 | 30 min |
+
+Amazon Nova ships **implicit** caching for all text prompts, and individual Nova
+models additionally support explicit caching.
+
+Which brings us to the other half: **Qwen, Llama, Mistral and DeepSeek are not in
+this table.** For them there is no prompt caching on Bedrock — neither implicit
+nor explicit. Every model call pays the full prefix. That makes them close to
+irrelevant for text2SQL agents on AWS.
+
+## Pitfalls
+
+**Implicit isn't reliable.** The documentation says explicitly that an identical
+prompt guarantees no hit. Relying on it gives you no cost control, only a hope.
+
+**Cross-region inference increases the number of cache writes.** Automatic region
+selection is good for availability and bad for the cache hit rate; under high
+load it can produce additional writes.
+
+**The lookback only reaches about 20 content blocks.** Bedrock offers simplified
+cache management for Claude: a single breakpoint at the end of the static part,
+the rest found automatically. But the search only looks back around twenty
+blocks. With more static content you need several checkpoints.
+
+**`inputTokens` no longer counts everything.** With caching active, the field
+contains only the *non*-cached tokens. The total is
+`inputTokens + cacheReadInputTokens + cacheWriteInputTokens`. If your cost
+monitoring is built on `inputTokens`, you'll see a drop after switching caching
+on that isn't one.
+
+**And the usual suspect:** a timestamp in the system prompt, an unsorted
+serialized schema, a tool list that changes depending on the question. Each of
+those drives the hit rate to zero without producing an error.
+
+There's exactly one place to verify it: `cacheReadInputTokens` in the response. If
+that reads zero across several turns, an invalidator is at work in the background
+— regardless of what the code thinks it's doing.
+
+## Method
+
+The model is in the repo at
+[`assets/bench/caching-rechnet-sich.py`](/assets/bench/caching-rechnet-sich.py).
+Prefix 15,527 tokens, one tool result 1,200 tokens — the same assumptions as in
+the MCP post, so the numbers stay comparable.
+
+What's solid are the **multipliers** — cache write 1.25×, cache read 0.1× of the
+input price — because they're stated that way in the documentation. The absolute
+Bedrock prices (Sonnet 5 at \$2.20 / \$11.00 per million tokens in the region, the
+open models between \$0.15 and \$0.62) come from secondary sources and change; the
+pricing page doesn't provide them in a form I'd want to cite here. If you take
+the arithmetic seriously, put your own numbers into the script. That changes
+little about the ratio and a lot about the absolute amounts.
+
+---
+
+**In short:** Prompt caching costs a one-off 25% surcharge and saves 90%
+thereafter. Because every tool call pulls another model call with an unchanged
+prefix behind it, it pays off on the very first one — 29% already at two model
+calls, 57% at eight. It doesn't just lower costs, it also flattens their growth
+across chain length. On Bedrock only Claude, GPT-5.6 and Nova can do it; Qwen,
+Llama, Mistral and DeepSeek cannot.

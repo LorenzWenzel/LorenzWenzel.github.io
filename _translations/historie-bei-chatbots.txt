@@ -1,0 +1,217 @@
+---
+slug: historie-bei-chatbots
+title: "How Much History Does a Chatbot Need?"
+---
+
+A language model is **completely stateless**. It remembers nothing, it doesn't
+know the user, it has no idea what was said ten seconds ago. Whatever it should
+know has to be sent along again with every single call.
+
+That isn't a limitation of the current model generation, it's how they work: a
+request goes in, an answer comes out, and afterwards the matter is forgotten. The
+impression of a conversation arises purely because someone prepends the
+transcript so far, every single time.
+
+![Säulendiagramm über sechs Turns: der blaue Anteil bereits früher gesendeter Token wächst stetig, der orange Anteil neuer Token bleibt konstant klein.](/assets/img/historie-zustandslos.svg)
+
+This has an unpleasant consequence: the question from turn 1 is transmitted for
+the sixth time in turn 6, and billed for the sixth time. The orange stripe is
+everything that's actually new.
+
+Frameworks take this off your hands — LangChain, Strands, AgentCore, every chat
+SDK keeps the transcript itself and appends it. That's convenient and exactly
+therefore dangerous: **every one of these frameworks brings a strategy with it,
+and the default is almost always "keep everything until it no longer fits."**
+Decide nothing and you've still decided — just not yourself. It's worth checking
+your framework's documentation for what it does on overflow: truncate, summarize,
+or crash.
+
+## More history isn't better
+
+The obvious assumption is: the more context, the better the answer. It's wrong,
+for two independent reasons.
+
+**The first is length itself.** The research on *context rot* shows that answer
+quality degrades as input length grows — markedly so within the advertised
+context window, and regardless of whether the additional text is relevant
+([Chroma](https://www.trychroma.com/research/context-rot)). On top of that comes
+the familiar *lost-in-the-middle* effect: information at the beginning and end is
+found more reliably than information in the middle. The mechanism is mundane —
+attention is distributed across all tokens, and the more there are, the less
+falls on each one.
+
+**The second reason is more uncomfortable.** In *LLMs Get Lost In Multi-Turn
+Conversation* ([arXiv 2505.06120](https://arxiv.org/abs/2505.06120), ICLR 2026),
+performance across six task types drops by an average of **39%** in multi-turn
+conversation compared to the same problem posed in one go. Models scoring above
+90% in single-turn land at around 65%.
+
+The decomposition is remarkable: the capability itself drops only 15%, while
+**unreliability rises by 112%**. The authors describe the mechanism this way:
+models make assumptions early, then over-rely on their own previous answers — and
+once they've taken a wrong turn, they don't find their way back.
+
+For the question in this post, that's the decisive sentence. **The history isn't
+just expensive, it can also be wrong.** An agent that picked the wrong table in
+turn 2 reads that decision as established fact in turn 5. Keep the transcript in
+full and you preserve every error along with it.
+
+## How many past turns?
+
+There's no universally valid number, but there is a useful question: **what could
+the next user question realistically refer back to?**
+
+For a text2SQL chatbot the answer is reassuringly narrow. The typical follow-ups
+are "and now the same for Q3," "only EU-Central please," "sort that by revenue."
+They almost always refer to the last turn, rarely to the one before. A question
+referring back to turn 1 of a twenty-turn session is the exception — and you
+don't build a window for the exception, you build retrieval.
+
+Practice supports this. On a benchmark of 50 tasks, the task completion rate rose
+from **71% to 79%** when the history was trimmed to the last five tool pairs;
+with an additional running summary, to **91.6%**.
+
+![Balkendiagramm: alles behalten 71 Prozent, letzte fünf Tool-Paare 79 Prozent, zusätzlich laufende Zusammenfassung 91,6 Prozent.](/assets/img/historie-aufraeumen.svg)
+
+The variant that kept everything was the **worst** — at roughly triple the token
+consumption ([analysis](https://usewire.io/blog/pruning-agent-context-raised-accuracy/)).
+So cleaning up here isn't a cost-saving measure with a quality penalty, it's both
+at once.
+
+One caveat belongs here, and it matters: the effect is **not linear in model
+strength**. A study across models from 4B to 284B parameters finds an inverted
+U-curve — near zero with a weak retriever, up to **11.7 points** of gain when a
+good retriever meets a mid-strength model, and **negative** once the model is
+strong enough to filter its own context. A model with 80.7% baseline accuracy
+lost 1.1 points from masking
+([analysis](https://usewire.io/blog/context-pruning-helps-agents-until-it-doesnt/)).
+
+Translated: if you run Claude Sonnet 5 with short sessions, aggressive trimming
+gains you little to nothing. If you have a smaller model or long sessions, it
+gains you a lot.
+
+## Window, retrieval, or a mixture?
+
+The three building blocks do different things, and you don't choose between them,
+you combine them.
+
+![Fünf Zeilen mit je zehn Turn-Blöcken: alles behalten, gleitendes Fenster, Fenster mit Zusammenfassung, Retrieval und eine Mischung aus allem.](/assets/img/historie-strategien.svg)
+
+**The sliding window** is cheap, predictable, and loses abruptly. What falls out
+is gone — no warning, no error message. For follow-up questions about the last
+turn it's exactly right.
+
+**The running summary** holds the thread beyond the window, and in exchange loses
+detail gradually. The difference from a window isn't one of degree but of kind: a
+window loses suddenly and completely, a summary slowly and partially. In the
+failure case the second is usually more benign — the agent then has a vague
+recollection instead of none at all.
+
+**Retrieval** solves a different problem than the other two. In the 2026
+literature the split has settled: *long context solves capacity, memory solves
+continuity across sessions.* A window can't know what the user asked last week;
+a retrieval index can. The price difference is substantial — on the LoCoMo
+benchmark, around **6,956 tokens per retrieval call against roughly 26,000 for
+full context**
+([overview](https://mem0.ai/blog/ai-memory-benchmarks-in-2026)).
+
+Important for expectations: in these studies, full context remains the **upper
+bound**, not a bar you clear effortlessly. On LoCoMo it sits at around 87.5%
+accuracy, and the good memory systems approach it rather than surpass it.
+Switching to retrieval usually trades a few percentage points for an order of
+magnitude in tokens and latency. That's a good trade — but it is one.
+
+**The mixture** is the production case: the last three to five turns in full, a
+running summary before that, and an index for everything older that the agent
+queries when needed.
+
+## Do tool results belong in the history?
+
+This question is the most important of the three, and the least often asked. The
+reason sits in a single number: **observation tokens — that is, what tools return
+— make up around 84% of an average agent turn.**
+
+Compared to that, questions and answers are rounding errors. Anyone trying to
+keep the transcript small while debating the number of turns is optimizing around
+in the remaining 16%.
+
+For a text2SQL agent there's an additional asymmetry that nearly makes the
+decision by itself:
+
+| Component | Size | Value after the answer |
+|---|---|---|
+| The user question | tiny | high — follow-ups refer to it |
+| The generated SQL | small | **high** — shows which tables and filters applied |
+| The result set | large | **near zero** — the answer is long since formulated |
+| The formulated answer | small | high |
+
+The SQL *is* the summary of the result set that you'd otherwise have to generate.
+In twenty lines it tells the model what was just discussed — which table, which
+period, which filters. The 1,200 tokens of result rows tell it the same thing, at
+sixty times the price.
+
+The practical rule is therefore: **keep the SQL, replace the rows.** Instead of
+the full result set, a placeholder stays in the history:
+
+```
+[Ergebnis verworfen: 1 248 Zeilen, 6 Spalten, Summe net_revenue_eur 4,21 Mio. €]
+```
+
+That's entirely sufficient for "and now the same for Q3." For the rare case where
+the user does refer to a specific row, the agent can re-run the query — an extra
+model call, but only then.
+
+The common approach is tiered: watch token utilization at 70%, replace old tool
+results with placeholders from 85%, and only at 95% have the model produce a real
+summary. For Claude models there's context editing with
+`clear_tool_uses_20250919`, which removes old results instead of summarizing
+them.
+
+## The conflict with the cache
+
+One point missing from almost every guide: **every cleanup invalidates the prompt
+cache from the cut point onward.**
+
+The cache is a prefix comparison. Replace a tool result in the middle of the
+history with a placeholder and you've changed everything from that point on — and
+on the next call you pay full price for the entire remainder. How expensive that
+is, is covered in
+[Why Prompt Caching Is Mandatory for text2SQL Agents](/text2sql-agent-aws/2026/09/11/prompt-caching-pflicht.html).
+
+From which follows a rule that contradicts intuition: **clean up rarely and in
+large steps, not continuously and in small ones.** Trim a little on every turn and
+you permanently have no cache. Clean up hard once every ten turns and you pay for
+the rebuild once and profit in between.
+
+## A proposal for the text2SQL case
+
+As a starting point, not as truth:
+
+- **The last 3 turns** in full, including tool results.
+- **Older turns**: keep question, SQL and answer; replace result sets with a
+  placeholder carrying row count and a key figure.
+- **From around 15 turns**, a running summary that records the subject of the
+  conversation — which tables, which period, which definitions were clarified.
+- **Across sessions**, only what the user explicitly saved or what holds
+  permanently as domain fact. Not yesterday's conversation.
+- **Clean up in blocks**, not on every turn.
+
+And a warning that follows from the multi-turn finding: when the agent has
+visibly gone off the rails, the best intervention isn't to ask again but to
+**start over** — with the original question, posed more precisely. According to
+the study, a model that has taken a wrong turn rarely recovers within the same
+conversation. A "new question" button in the chatbot is therefore not an
+interface detail but a quality measure.
+
+
+---
+
+**In short:** The model remembers nothing; the history is something you actively
+send along and pay for again on every turn. More of it isn't better: quality
+declines with length, and in multi-turn conversation it drops by an average of
+39% — mainly because models cling to their own earlier mistakes. The most
+important lever isn't the turns but the tool results: they make up around 84% of
+the transcript and are nearly worthless once the answer is written. For text2SQL
+that means: keep the SQL, replace the rows with a placeholder, last three turns
+in full, condense what's older — and do it in large steps rather than
+continuously, or the cache picks up the tab.

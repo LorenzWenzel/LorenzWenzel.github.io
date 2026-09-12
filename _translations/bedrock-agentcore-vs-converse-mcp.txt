@@ -1,0 +1,253 @@
+---
+slug: bedrock-agentcore-vs-converse-mcp
+title: "Bedrock AgentCore vs. Converse + MCP"
+---
+
+The question is older than its answer. When I first noted it down, the "native
+way" was still called Amazon Bedrock Agents: create action groups, attach a
+knowledge base, write instructions, AWS orchestrates. That product has been
+**closed to new customers since 30 July 2026** — it's now called *Bedrock Agents
+Classic*, continues in maintenance mode for existing customers, and gets no new
+models and no new features
+([AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/agents-classic-maintenance-mode.html)).
+
+The native way today is called **AgentCore harness**. And the other way —
+Converse + MCP — is less "native" than its name sounds. Both need defining
+cleanly first, or you end up comparing marketing copy.
+
+## What the two ways really are
+
+**Converse + MCP** means: you write the loop yourself. The Converse API knows
+tools only as definitions — the `Tool` type has exactly three members,
+`toolSpec`, `cachePoint` and `systemTool`, and none of them points at an MCP
+server ([API reference](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Tool.html)).
+The docs say it explicitly: the model does not call a tool, the application does
+([tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html)).
+So the MCP client that fetches the tools from the server and puts their results
+back into the transcript as `toolResult` blocks is code you own. In practice you
+use Strands for this: it speaks `ConverseStream`, brings an MCP client for stdio
+and Streamable HTTP, and sets cache points via configuration
+([Strands](https://strandsagents.com/docs/user-guide/concepts/model-providers/amazon-bedrock/)).
+You host it wherever you like — Fargate, Kubernetes, a server.
+
+**AgentCore harness** means: you don't write the loop. You declare model, system
+prompt, tools, memory and limits as configuration, and AgentCore runs the loop —
+which incidentally is also Strands, just not in your hands
+([harness](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness.html)).
+Underneath sits the AgentCore Runtime (one microVM per session), alongside Gateway
+(turns Lambda functions or APIs into an MCP server), Memory (transcript and
+long-term memory), Identity (token vault) and Observability (CloudWatch). There's
+no separate price for the harness; you pay for the building blocks below it.
+
+AWS's own recommendation is unambiguous: *"Use the harness unless you have a
+specific reason to own the loop yourself."* The rest of this post is about whether
+a text2SQL agent has such a reason.
+
+There's a third way that AWS ships alongside: **your own code on the AgentCore
+Runtime.** You bring the Strands loop in your own container, AWS provides the
+infrastructure. That isn't a compromise but, for this series, the most interesting
+option, so it runs along in the matrix.
+
+## Who carries what
+
+![Matrix mit acht Ebenen – Orchestrierungsschleife, Hosting, Gesprächsverlauf, MCP-Server, Nutzer-Auth, Tracing, Prompt Caching, Hooks – und drei Betriebswegen. Blau: selbst gebaut. Grau: von AWS geliefert. Orange: offen oder nicht möglich.](/assets/img/agentcore-wer-traegt-was.svg)
+
+The matrix is the actual answer; the rest are footnotes to it.
+
+**The loop** is the same in the first two columns — Strands, in your own hands. In
+the third column it belongs to AWS. That sounds like a detail and is the whole
+difference: everything this series has described as a lever — how tool results
+enter the transcript, when cleanup happens, whether parallel `toolResult` blocks
+go back in one message — is no longer code in column three, but either a
+configuration field or nothing. AWS's comparison table lists what the harness
+can't do: no custom framework, no hooks, no patterns beyond the agent loop, no
+bidirectional streaming
+([harness vs. Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-vs-runtime.html)).
+
+**Hosting and isolation** is where AgentCore takes the most off your hands. Every
+session runs in its own microVM, deleted after the session. Build that yourself
+and you have Fargate tasks or pods shared between users, and you have to guarantee
+the separation in code. For an agent operating with the user's Athena permissions,
+that's not a cosmetic point.
+
+**The conversation history** lands in AgentCore Memory with the harness, with a
+sliding window of 30 messages by default. Anyone who read the
+[history post](/text2sql-agent-aws/2026/09/11/historie-bei-chatbots.html) sees the problem:
+a window counting *messages* keeps tool results in full — and those make up around
+84% of the transcript. The `summarization` alternative exists; the rule "keep the
+SQL, replace the rows" does not exist as a configuration.
+
+**The MCP server for Athena** has a natural home with the harness — the Gateway —
+and it's a good one. But it also has a price; more on that shortly.
+
+**Prompt caching** is the cell that occupied me the most. In column one you set
+the `cachePoint` yourself; in column two you tell Strands
+`cache_config=CacheConfig(strategy="auto")`. For the harness, none of the
+documentation pages I read states whether and where cache points are set. Since
+the harness runs on Strands, it's likely; it isn't documented. The check is the
+same as in the
+[caching post](/text2sql-agent-aws/2026/09/11/prompt-caching-pflicht.html): the stream's
+`metadata` events carry token usage — if `cacheReadInputTokens` permanently reads
+zero, you're paying the full prefix on every call, and the arithmetic from that
+post applies with the sign reversed.
+
+## What doesn't change
+
+The model bill. Both ways call the same model through the same API with the same
+transcript. The n+1 rule from
+[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/09/11/kosten-von-mcp-in-agenten.html)
+holds unchanged: an n-step tool chain costs n+1 model calls, no matter who runs
+the loop. The Gateway is one more hop on the way to the tool, but not one more
+model call.
+
+The harness even brings a small surcharge: the default tools `shell` and
+`file_operations` are present in every session and cost, per the docs, around
+**900 input tokens per model call**, whether the agent uses them or not
+([tools](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-tools.html)).
+At four calls per question that's 3,600 tokens — uncached, roughly \$7.90 per
+1,000 questions on Sonnet 5, more than the entire infrastructure below. A text2SQL
+agent needs no shell; restricting `allowedTools` to your own tools is the first
+line of any harness configuration.
+
+## The arithmetic
+
+Same assumptions as in the other posts: four model calls per question, three tool
+calls, 22 seconds wall time, five questions per conversation. The script is at
+[`assets/bench/agentcore-vs-converse.py`](/assets/bench/agentcore-vs-converse.py).
+
+![Liniendiagramm: Infrastrukturkosten je 1000 Fragen über die Fragen je Monat. Fargate-Dauerbetrieb fällt mit steigender Menge, AgentCore harness liegt konstant bei 3,30 Dollar, eigener Code auf Runtime bei 1,16. Schnittpunkt bei rund 22 000 Fragen im Monat.](/assets/img/agentcore-kosten-dichte.svg)
+
+The first thing that stands out: **the scale.** The model bill for the same 1,000
+questions is around \$76 (Sonnet 5, with caching). The infrastructure is between
+\$1 and \$4. Decide this comparison on infrastructure cost and you're deciding it
+on two to five percent of the bill.
+
+The second: **continuous operation has a break-even, AgentCore doesn't.** Two
+Fargate tasks cost \$72 a month whether one question arrives or a million. Per
+question that only becomes cheaper than the harness above roughly 22,000 questions
+a month — 730 a day. An internal chatbot for a controlling team sits far below
+that. Same logic as the cache write in the zeroth variant of the domain-knowledge
+post: request density decides, not the list price.
+
+The third sits in the composition:
+
+![Ein gestapelter Balken: Memory-Events 2,50 Dollar, Leerlauf-Speicher 0,47, Lambda 0,20, aktiver Speicher 0,06, CPU 0,05, Gateway 0,02.](/assets/img/agentcore-kosten-anteile.svg)
+
+**The Runtime is the smallest item.** CPU is only billed during active compute,
+and an agent waiting on the model and on Athena almost never computes. Two things
+cost instead: **memory events** — every message, every tool call, every result is
+an event at \$0.25 per thousand, and one question produces eight of them — and
+**idle time**. A microVM's memory is billed for the entire session duration,
+including the 15 minutes it waits by default after the last message. At five
+questions per conversation, the waiting costs more than the working. Setting
+`idleRuntimeSessionTimeout` to five minutes cuts the bill by a tenth; the price is
+more cold starts when someone does have another question after six minutes.
+
+## Where the Athena server should go
+
+The harness offers three homes for the MCP server, and they differ more than the
+docs suggest.
+
+| Location | How | In favor | Against |
+|---|---|---|---|
+| **Gateway, Lambda target** | Athena logic as Lambda, Gateway turns it into MCP | Auth, policy and tool search from the Gateway; no server to operate | Lambda *waits* on Athena and is billed for it; cold starts; tool names carry a `target___tool` prefix |
+| **Own MCP server on the Runtime** | Container on port 8000, `/mcp`, Streamable HTTP | Own code, own role, no Lambda detour | Inbound auth with JWT or IAM mandatory; second microVM per session |
+| **Own MCP server elsewhere** | Any host, connected by URL | Nothing changes about the existing server | Auth and networking on you; no longer in AWS's trace |
+
+For Athena the first row is the obvious one, and its catch is exactly the one the
+MCP post described as an "artificial dependency": Athena is asynchronous. A Lambda
+that waits internally until the query finishes is the right shape — but it pays
+for the wait, and at eight seconds per query and three queries per question that's
+\$0.20 per 1,000 questions. Small, but the only item that grows with Athena
+runtime. A Lambda that merely starts the query and returns the execution ID would
+be cheaper and turns the model into a polling loop. That trap is as wide open in
+the harness as anywhere else.
+
+## What matters in operation
+
+**Cold start.** A new session gets a new microVM. For container deployments AWS
+keeps a pool of ten warm VMs; beyond that, start time depends on image size. For
+direct code deployments an AWS employee cites 2–3 seconds
+([samples issue](https://github.com/awslabs/agentcore-samples/issues/899)). Within
+a session there is no cold start as long as the session ID is passed along —
+without it, every request lands on a new VM.
+
+**Limits.** 2 vCPU and 8 GB per session, 100 MB payload, 15 minutes per
+synchronous request, 8 hours per session, 2,500 concurrent sessions in Frankfurt,
+25 new sessions per second
+([quotas](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html)).
+For a text2SQL agent, none of them is tight.
+
+**Region.** Harness, Runtime, Memory, Gateway and Identity are all available in
+Frankfurt
+([regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html)).
+That wasn't the case in 2025 and is no longer a question today.
+
+**Deployment.** The Runtime requires an ARM64 container in ECR with `/invocations`
+and `/ping` on port 8080 — or a code package up to 250 MB. That's a thin contract;
+a Strands agent running on Fargate today is moved in an afternoon. The reverse
+holds too: the contract binds little. What binds are Gateway target
+configurations and Memory strategies — those exist in that form only at AWS.
+
+## What it depends on
+
+| If … | then |
+|---|---|
+| you want to pull the series' levers (tool granularity, transcript cleanup, parallel results) | **own code** — on Runtime or elsewhere |
+| a team of two operates the agent and has no ops budget | **harness** |
+| under ~20,000 questions a month | harness or Runtime; continuous operation doesn't pay |
+| over ~50,000 questions a month and a platform team exists | **Fargate** becomes cheaper per question — but only per question |
+| per-user session isolation is security-relevant (Athena permissions!) | **Runtime**, in either flavor |
+| the loop must be replaceable (framework, graph patterns, hooks) | **not the harness** |
+| cache hit rate has to be evidenced | first measure which column you're in |
+
+## Recommendation
+
+**For a text2SQL agent: your own code on the AgentCore Runtime.** Not the harness,
+and not your own cluster.
+
+The argument against the harness is this series. Almost every lever that gained
+something in the previous posts sits in the loop: cutting tools more coarsely
+still works, but returning the results of parallel tools in one message, replacing
+result sets in the transcript with placeholders, setting cache points deliberately
+— all of that is, in the harness column, either a configuration field with
+different semantics or not provided at all. And the one cell that's orange because
+I couldn't evidence it is, of all things, prompt caching.
+
+The argument against your own cluster is the arithmetic: below 20,000 questions a
+month you pay for empty containers, and the session isolation you get for free
+with AgentCore is something you'd have to build — for an agent handling database
+permissions, that's the part you least want to build yourself.
+
+The harness is the right choice for a first prototype and for teams whose
+bottleneck isn't tokens but operating hours. Starting there loses you nothing: the
+harness exports to Strands code, and that runs on the same Runtime. The path from
+column three to column two is provided for; the path from column one to anywhere
+is work.
+
+## Method and caveats
+
+Nothing here is measured, everything is calculated. Prices are September 2026 list
+prices from the
+[AgentCore pricing page](https://aws.amazon.com/bedrock/agentcore/pricing/) and
+the Fargate and Lambda pricing pages for us-east-1; for Frankfurt they're somewhat
+higher, for ARM Fargate lower. The usage profile — 22 seconds, 1 GB, eight events,
+five questions per conversation — is an assumption; if you have your own, put it
+at the top of the script. The model costs come from the caching post and are
+justified there.
+
+Two things I could not evidence, and I'd rather say so than paper over it: whether
+the harness sets prompt caching, and how much latency the Gateway adds per tool
+call. For the latter there are CloudWatch metrics (`Latency`,
+`TargetExecutionTime`), but no published measurements.
+
+---
+
+**In short:** Classic Bedrock Agents are closed to new customers; the native way
+is the AgentCore harness, which takes over the loop — and with it almost every
+lever in this series. Converse has no MCP, so "Converse + MCP" means: your own
+loop, your own MCP client, usually Strands. Infrastructure costs 1–4% of the model
+bill in every variant and decides nothing; continuous operation only pays from
+around 22,000 questions a month. The third way — your own code on the AgentCore
+Runtime — keeps the loop and gets isolation, auth and tracing for free. For a
+text2SQL agent, that's the recommendation.

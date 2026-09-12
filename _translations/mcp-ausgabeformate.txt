@@ -1,0 +1,198 @@
+---
+slug: mcp-ausgabeformate
+title: "Why MCP Functions Shouldn't Return JSON"
+---
+
+When you build an agent that translates questions into SQL and runs them against
+Amazon Athena, you spend the first few weeks on the prompt. On table selection.
+On joins the model builds backwards. What you *don't* think about is the line of
+code that turns the query result into a string before it goes back to the model.
+
+It isn't the biggest item on the bill — there are far heftier ones. But it's the
+cheapest one to get rid of: a factor of 3 in token consumption for the result
+set, available by swapping out one function. No architectural decision, no
+rebuild, no trade-off.
+
+Almost none, anyway. There are tasks where the expensive tokens pay off — they
+just aren't the ones you'd guess.
+
+![Ablaufdiagramm: Nutzerfrage geht an den Agenten auf Bedrock, von dort an den MCP-Server und an Athena. Der Rückweg führt über die Serialisierung des Resultsets ins Kontextfenster.](/assets/img/text2sql-pipeline.svg)
+
+The outbound leg is cheap: a question, a few dozen tokens. The return leg carries
+the result set — and everything an MCP tool returns becomes context. Not once,
+but again in every follow-up turn, for as long as the conversation runs.
+
+## The setup
+
+I took a realistic Athena result — revenue by region and product category, six
+columns, the kind a text2SQL agent produces a hundred times a day — and
+serialized it into nine formats. Then I counted.
+
+```
+region,product_category,order_month,net_revenue_eur,order_count,avg_basket_eur
+EU-Central,Elektronik,2026-01,810661.01,12688,710.52
+EU-West,Elektronik,2026-02,374789.32,37773,393.09
+```
+
+![Balkendiagramm: Tokenbedarf für 1000 Zeilen in neun Formaten. XML 75.740, JSON pretty 68.865, YAML 56.600, JSON compact 46.863, Markdown 28.637, JSON columnar 24.879, TOON 24.629, CSV 23.518, TSV 23.513.](/assets/img/tokenkosten-formate.svg)
+
+The spread is a factor of **3.2**. Same result, same information, three times the
+context — purely because someone wrote `json.dumps(rows, indent=2)`.
+
+| Format | 10 rows | 200 rows | 1,000 rows | Tokens per row |
+|---|---:|---:|---:|---:|
+| XML | 763 | 15,151 | 75,740 | 75.7 |
+| JSON (pretty) | 688 | 13,768 | 68,865 | 68.9 |
+| YAML | 564 | 11,319 | 56,600 | 56.6 |
+| JSON (compact) | 468 | 9,367 | 46,863 | 46.9 |
+| Markdown table | 321 | 5,757 | 28,637 | 28.6 |
+| JSON (columnar) | 277 | 5,000 | 24,879 | 24.9 |
+| TOON | 275 | 4,949 | 24,629 | 24.6 |
+| CSV | 260 | 4,718 | 23,518 | 23.5 |
+| TSV | 256 | 4,716 | 23,513 | 23.5 |
+
+At ten rows none of this matters. The gap between CSV and JSON is 200 tokens —
+roughly the price of one polite sentence in the system prompt. From a few hundred
+rows on, it tips.
+
+## The reason is mundane
+
+There's only one effect worth naming, and it sits in the last column of the
+table: **does the format repeat the column names on every row or not?**
+
+JSON, YAML and XML do. With six columns, that means `"region"`,
+`"product_category"` and `"net_revenue_eur"` sit in the context a thousand times
+over, when once would do:
+
+```
+[{"region":"EU-Central","product_category":"Elektronik","order_month":"2026-01",
+  "net_revenue_eur":810661.01,"order_count":12688,"avg_basket_eur":710.52},
+ {"region":"EU-West","product_category":"Elektronik","order_month":"2026-02",
+  "net_revenue_eur":374789.32,"order_count":37773,"avg_basket_eur":393.09}]
+```
+
+CSV, TSV, TOON and a columnar JSON (`{"columns": [...], "rows": [[...]]}`) name
+them once in the header. From which it follows directly: **the more columns and
+the longer the column names, the bigger the gap.** For a table with twenty
+columns and descriptive names from the Glue catalog, a factor of 3 quickly
+becomes a factor of 5. For two columns called `a` and `b`, the effect almost
+vanishes.
+
+Everything else is noise: indentation, quotation marks, curly braces. Measurable,
+but secondary.
+
+## Tokens aren't quality
+
+This is where it gets uncomfortable, because the obvious conclusion — "so always
+CSV" — only half survives contact with the literature.
+
+For the TOON format, its authors report **72.2% accuracy versus 71.4% for JSON**
+across 244 queries and four models, at around 40% fewer tokens
+([benchmarks](https://github.com/toon-format/toon)). A practitioner comparison
+goes further for pure lookup queries on flat tables: **95.45% for CSV versus
+87.5% for JSON** — at roughly half the cost
+([Wyzer](https://wyzer.it/blog/Data-Format-Selection-for-Multi-Agent-LLM-Systems-An-Empirical-Analysis-of-Token-Efficiency)).
+That supports the thesis.
+
+Except: a study on extraction tasks finds the exact opposite. There, a Markdown
+key-value format beats CSV decisively, **60.7% against 44.3%** — at roughly 2.5
+times the tokens
+([SoftServe](https://medium.com/softserve-technical-communication/rethinking-llm-inputs-json-against-toon-and-markdown-kv-b713bcbe7eb5)).
+The format that writes the key next to every value wins precisely when the model
+has to *assign* individual values correctly rather than merely find them.
+
+So repeating the column names isn't pure waste. It's redundancy, and redundancy
+buys robustness. The question isn't whether you want to afford it, but whether
+the task needs it.
+
+## Which one, when?
+
+| Situation | Format | Why |
+|---|---|---|
+| Flat, uniform result set, many rows | **CSV / TSV** | Cheapest row, and the model knows the format from training |
+| Cells contain commas, semicolons, line breaks | **TSV** | Avoids the quoting mess; tabs virtually never appear in Athena strings |
+| Few rows (< 50) that the user reads along | **Markdown table** | 22% surcharge, but renders directly in the answer |
+| The model must assign values exactly, not just find them | **JSON / key-value** | Redundancy as error correction — here the extra tokens pay off |
+| Nested or non-uniform structure | **TOON or JSON** | CSV simply can't represent it |
+| The result is a single value or metric | **no table at all** | One sentence of plain text beats any format |
+
+The last row is the most important and the most often overlooked. `SELECT
+COUNT(*)` needs no serialization strategy.
+
+## Why Athena settles the question in advance
+
+For a text2SQL agent on AWS, the choice is narrower than the table suggests — and
+the reason lies at the source.
+
+Athena *can* do complex types: `ARRAY`, `MAP`, `STRUCT`, nested arbitrarily deep.
+They just don't come out cleanly at the exit. The CSV output doesn't handle
+arrays and maps correctly, and the standard advice is to flatten them beforehand
+with `UNNEST` and dot notation
+([Athena Guide](https://athena.guide/articles/complex-types),
+[AWS docs](https://docs.aws.amazon.com/athena/latest/ug/flattening-arrays.html)).
+What reaches the agent is therefore almost always a rectangle: *n* rows by *m*
+columns, every cell a scalar.
+
+And a rectangle devalues exactly the property you otherwise pay JSON for. JSON's
+strength is nesting; on flat data it's dead weight. Even TOON, designed
+specifically for LLM contexts, concedes the point: on purely tabular data CSV is
+smaller, and TOON costs a 5–10% surcharge there. The project's own benchmark
+confirms it — in the flat-only track, 64,247 tokens for CSV against 68,030 for
+TOON.
+
+**For the Athena normal form, the flat, header-based format isn't one good choice
+among several — it's the structurally fitting one.** Not because CSV is elegant,
+but because the data producer at the other end already threw the nesting away.
+
+## What that means in euros
+
+Take an agent answering 200 queries a day that return 500 rows on average.
+Indented JSON costs 34,425 tokens per answer, CSV 11,770 — a difference of
+**22,655 tokens per query**.
+
+Over a month that's roughly **136 million additional input tokens**. At Claude API
+list prices that's about \$272 with Sonnet 5 or \$680 with Opus 5 — and only if
+the result passes through the model *once*. In an agent that thinks two or three
+more times after the tool result, the result set is billed again on every turn.
+Then the bill reads \$816 or \$2,039, for exactly the same information.
+
+(Bedrock has its own pricing; the magnitude shifts, the ratio doesn't.)
+
+## Practical consequences for the MCP server
+
+Three things follow for the tool implementation:
+
+**Don't return the whole result set.** The cheapest row is the one you never
+serialize. A limit in the tool, a note about the total ("1,248 rows, the first
+100 follow") and the option to request more is almost always better than the full
+dump.
+
+**Watch out for duplication.** If you use `structuredContent`, know this: the
+specification recommends shipping the same content additionally as serialized
+JSON in a text block, for compatibility reasons
+([clarifying discussion](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1624)).
+Implement that naively and you pay for the payload twice.
+
+**Separate the audiences.** The text block is for the model and may be terse;
+`structuredContent` can feed a widget that never enters the context at all
+([FutureSearch](https://futuresearch.ai/blog/mcp-results-widget/)). A summary for
+the model, the raw data for display — that saves more than any format choice.
+
+## Method and caveats
+
+Measured with `tiktoken` and `o200k_base`. That is **not** the tokenizer of the
+Claude models, and the absolute numbers shift accordingly. The measured effect
+isn't a tokenizer artifact though, it's structural: a format that repeats the
+same string a thousand times does so under any tokenizer. The ranking holds, the
+factors wobble in the second decimal place. To know it exactly for your own
+table, use `messages.count_tokens`.
+
+
+---
+
+**In short:** For a flat Athena result set, CSV or TSV is the right format — not
+as a matter of taste, but because the source is flat and every nesting-capable
+format makes you pay for an ability it never uses. There are two exceptions: a
+handful of rows the user reads along (Markdown), and tasks where the model has to
+assign values exactly (then you buy the redundancy deliberately). The biggest
+saving lies elsewhere anyway: in the rows you never return at all.
