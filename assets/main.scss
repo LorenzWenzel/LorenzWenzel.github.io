@@ -160,6 +160,40 @@
   .card-title { font-size: 1.3rem; }
 }
 
+/* ---------------------------------------------------- Sprachumschalter */
+.lang-switch {
+  margin: 0.2rem 0 1.7rem;
+}
+
+.lang-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: inherit;
+  color: #2a7ae2;
+  background: #eaf2fd;
+  border: 1px solid #cfe2fa;
+  border-radius: 999px;
+  padding: 0.32rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.lang-toggle-btn::before {
+  content: "\1F310";
+  font-size: 0.85rem;
+}
+
+.lang-toggle-btn:hover,
+.lang-toggle-btn:focus {
+  background: #dcebfc;
+  border-color: #a9cdf5;
+  outline: none;
+}
+
 /* ---------------------------------------------------- Grafiken */
 .post-content img {
   height: auto;

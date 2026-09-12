@@ -18,3 +18,11 @@ header_pages:
 
 plugins:
   - jekyll-feed
+
+# Englische Übersetzungen eines Beitrags liegen hier, mit demselben
+# 'slug' wie das deutsche Original. output: false, weil sie keine
+# eigene URL bekommen sollen — das Post-Layout blendet sie per JS
+# in dieselbe Seite ein (Umschalter statt eigener Adresse).
+collections:
+  translations:
+    output: false
