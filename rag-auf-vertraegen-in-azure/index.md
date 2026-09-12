@@ -38,8 +38,6 @@ Mietverträgen — gebaut mit **Azure Document Intelligence**, **Azure OpenAI** 
 <ul class="todo-list">
   <li><strong>Chunking-Strategien</strong> — feste Tokenzahl, Schnitt am Paragraphen,
   semantisch. Und warum „800 Token“ nicht die 800 Token sind, die das Modell zählt.</li>
-  <li><strong>Reranker vs. Retrieval</strong> — lohnt es sich, 60 Kandidaten zu holen und
-  umsortieren zu lassen, oder wären 20 gut gesuchte genauso gut?</li>
   <li><strong>Wie werden „offene“ Fragen in RAG gelöst?</strong> — „Was steht in § 5?“
   beantwortet Top-k gut. „Welche Verträge laufen 2026 aus?“ strukturell gar nicht.</li>
   <li><strong>RAG-Strategien bei Verträgen</strong> — Verweise, Anlagen, Fristen, und das
