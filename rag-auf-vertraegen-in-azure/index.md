@@ -18,6 +18,8 @@ Grundlage ist ein Proof of Concept, der Mietverträge per OCR einliest, entlang
 der Paragraphen zerlegt, Kopfdaten als Metadaten extrahiert und die Antworten
 mit Quellenangaben belegt.
 
+![Architektur des RAG_POC: Streamlit-UI in Docker mit zwei Pipelines — RAG_POC.py auf den Index "chunks" mit Metadaten-Extraktion, UploadAnswer.py auf den Index "uploadchunks" ohne Metadaten. Beide sprechen mit Azure Document Intelligence für OCR, Azure AI Search für Hybrid-Suche mit semantischem Reranker, und Azure OpenAI für Embeddings und die Chat-Modelle.](/assets/img/rag-poc-architektur.jpeg)
+
 {% assign leer = "" | split: "," %}
 {% assign serie = site.categories['rag-auf-vertraegen-in-azure'] | default: leer | sort: 'date' %}
 
