@@ -23,6 +23,13 @@ plugins:
 # 'slug' wie das deutsche Original. output: false, weil sie keine
 # eigene URL bekommen sollen — das Post-Layout blendet sie per JS
 # in dieselbe Seite ein (Umschalter statt eigener Adresse).
+#
+# Die Dateien in _translations/ enden bewusst auf .txt, nicht .md:
+# Jekyll rendert Collections in unklarer Reihenfolge, und bei .md
+# würde Kramdown die Übersetzung manchmal vor, manchmal nach dem
+# Post konvertieren. Mit .txt fasst Kramdown die Datei nie automatisch
+# an — das Layout ruft stattdessen selbst `| markdownify` auf, was
+# unabhängig von der Renderreihenfolge immer funktioniert.
 collections:
   translations:
     output: false

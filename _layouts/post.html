@@ -29,7 +29,7 @@ layout: default
 
   {%- if translation -%}
   <div class="post-content e-content" itemprop="articleBody" lang="en" data-lang-block="en" hidden>
-    {{ translation.content }}
+    {{ translation.content | markdownify }}
   </div>
   {%- endif -%}
 
