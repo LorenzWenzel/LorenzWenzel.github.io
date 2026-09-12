@@ -1,0 +1,21 @@
+{%- assign leer = "" | split: "," -%}
+{%- assign serie = site.categories[include.kategorie] | default: leer | sort: 'date' -%}
+
+<h2 class="section-heading">{% include t.html key="erkenntnisse" %}</h2>
+
+{% if serie.size > 0 %}
+<ul class="post-list-plain">
+  {%- for post in serie %}
+  {%- assign tr = site.translations | where: "slug", post.slug | first %}
+  <li>
+    <span class="post-date"><span data-lang-block="de">{{ post.date | date: "%d.%m.%Y" }}</span><span data-lang-block="en">{{ post.date | date: "%b %-d, %Y" }}</span></span>
+    <a class="post-link" href="{{ post.url | relative_url }}"><span data-lang-block="de">{{ post.title | escape }}</span><span data-lang-block="en">{{ post.title_en | default: post.title | escape }}</span></a>
+    {%- if post.excerpt %}
+    <p class="post-excerpt"><span data-lang-block="de">{{ post.excerpt | strip_html | normalize_whitespace | truncate: 200 }}</span><span data-lang-block="en">{% if tr %}{{ tr.content | markdownify | strip_html | normalize_whitespace | truncate: 200 }}{% else %}{{ post.excerpt | strip_html | normalize_whitespace | truncate: 200 }}{% endif %}</span></p>
+    {%- endif %}
+  </li>
+  {%- endfor %}
+</ul>
+{% else %}
+<p><em>{% include t.html key="nichts_veroeffentlicht" %}</em></p>
+{% endif %}

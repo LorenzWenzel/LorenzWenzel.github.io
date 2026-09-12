@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Welche Historie bei einem Chatbot?"
+title_en: "How Much History Does a Chatbot Need?"
 date: 2026-09-11 12:00:00 +0200
 ---
 

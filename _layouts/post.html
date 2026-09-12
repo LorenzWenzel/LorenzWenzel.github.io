@@ -4,12 +4,9 @@ layout: default
 <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
 
   <header class="post-header">
-    <h1 class="post-title p-name" itemprop="name headline">{{ page.title | escape }}</h1>
+    <h1 class="post-title p-name" itemprop="name headline"><span data-lang-block="de">{{ page.title | escape }}</span><span data-lang-block="en">{{ page.title_en | default: page.title | escape }}</span></h1>
     <p class="post-meta">
-      <time class="dt-published" datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished">
-        {%- assign date_format = site.minima.date_format | default: "%b %-d, %Y" -%}
-        {{ page.date | date: date_format }}
-      </time>
+      <time class="dt-published" datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished"><span data-lang-block="de">{{ page.date | date: "%d.%m.%Y" }}</span><span data-lang-block="en">{{ page.date | date: "%b %-d, %Y" }}</span></time>
       {%- if page.author -%}
         • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span class="p-author h-card" itemprop="name">{{ page.author }}</span></span>
       {%- endif -%}
@@ -17,19 +14,19 @@ layout: default
   </header>
 
   {%- assign translation = site.translations | where: "slug", page.slug | first -%}
-  {%- if translation -%}
-  <p class="lang-switch">
-    <button type="button" id="lang-toggle" class="lang-toggle-btn" aria-pressed="false">English</button>
-  </p>
-  {%- endif -%}
 
   <div class="post-content e-content" itemprop="articleBody" data-lang-block="de">
     {{ content }}
   </div>
 
   {%- if translation -%}
-  <div class="post-content e-content" itemprop="articleBody" lang="en" data-lang-block="en" hidden>
+  <div class="post-content e-content" lang="en" data-lang-block="en">
     {{ translation.content | markdownify }}
+  </div>
+  {%- else -%}
+  <div class="post-content e-content" lang="en" data-lang-block="en">
+    <p class="translation-missing">This post has not been translated yet. The German version is shown when you switch back.</p>
+    {{ content }}
   </div>
   {%- endif -%}
 
@@ -39,34 +36,3 @@ layout: default
 
   <a class="u-url" href="{{ page.url | relative_url }}" hidden></a>
 </article>
-
-{%- if translation -%}
-<script>
-(function () {
-  var btn = document.getElementById('lang-toggle');
-  var de = document.querySelector('[data-lang-block="de"]');
-  var en = document.querySelector('[data-lang-block="en"]');
-  if (!btn || !de || !en) return;
-
-  var LABEL_FOR = { de: 'English', en: 'Deutsch' };
-
-  function apply(lang) {
-    de.hidden = (lang !== 'de');
-    en.hidden = (lang !== 'en');
-    btn.textContent = LABEL_FOR[lang];
-    btn.setAttribute('aria-pressed', lang === 'en');
-  }
-
-  var stored = null;
-  try { stored = localStorage.getItem('blog-lang'); } catch (e) {}
-  var current = (stored === 'en') ? 'en' : 'de';
-  apply(current);
-
-  btn.addEventListener('click', function () {
-    current = (current === 'de') ? 'en' : 'de';
-    apply(current);
-    try { localStorage.setItem('blog-lang', current); } catch (e) {}
-  });
-})();
-</script>
-{%- endif -%}

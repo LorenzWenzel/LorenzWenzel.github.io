@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="{{ page.lang | default: site.lang | default: "de" }}">
+
+  {%- include head.html -%}
+
+  <body data-title-de="{{ page.title | default: site.title | escape }}"
+        data-title-en="{{ page.title_en | default: page.title | default: site.title | escape }}"
+        data-site-title="{{ site.title | escape }}">
+
+    {%- include header.html -%}
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        {{ content }}
+      </div>
+    </main>
+
+    {%- include footer.html -%}
+
+    <script>
+    (function () {
+      var root = document.documentElement;
+      var body = document.body;
+      var btn  = document.getElementById('lang-toggle');
+
+      function currentLang() {
+        return root.classList.contains('lang-en') ? 'en' : 'de';
+      }
+
+      function apply(lang) {
+        root.classList.toggle('lang-en', lang === 'en');
+        root.lang = lang;
+        if (btn) { btn.setAttribute('aria-pressed', lang === 'en'); }
+
+        var t = (lang === 'en') ? body.dataset.titleEn : body.dataset.titleDe;
+        var site = body.dataset.siteTitle;
+        document.title = (t && site && t !== site) ? (t + ' | ' + site) : (t || site || document.title);
+      }
+
+      apply(currentLang());
+
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var next = (currentLang() === 'de') ? 'en' : 'de';
+          apply(next);
+          try { localStorage.setItem('blog-lang', next); } catch (e) {}
+        });
+      }
+    })();
+    </script>
+
+  </body>
+
+</html>

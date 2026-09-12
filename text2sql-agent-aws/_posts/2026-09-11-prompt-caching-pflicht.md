@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Warum Prompt Caching bei text2SQL-Agenten Pflicht ist"
+title_en: "Why Prompt Caching Is Mandatory for text2SQL Agents"
 date: 2026-09-11 11:00:00 +0200
 ---
 

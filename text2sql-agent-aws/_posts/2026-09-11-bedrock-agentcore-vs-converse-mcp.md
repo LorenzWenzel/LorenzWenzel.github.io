@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Bedrock AgentCore vs. Converse + MCP"
+title_en: "Bedrock AgentCore vs. Converse + MCP"
 date: 2026-09-11 13:00:00 +0200
 serie: "text2SQL-Agent auf AWS"
 ---

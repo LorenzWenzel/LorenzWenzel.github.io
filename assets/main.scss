@@ -161,30 +161,37 @@
 }
 
 /* ---------------------------------------------------- Sprachumschalter */
-.lang-switch {
-  margin: 0.2rem 0 1.7rem;
+/* Die Sichtbarkeit regelt allein CSS ueber die Klasse an <html>. Ein
+   Skript im <head> setzt sie vor dem ersten Rendern, damit beim Laden
+   nie kurz die falsche Sprache aufblitzt. */
+[data-lang-block="en"] { display: none; }
+
+html.lang-en {
+  [data-lang-block="de"] { display: none; }
+  [data-lang-block="en"] { display: revert; }
 }
 
 .lang-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   font-family: inherit;
+  line-height: 1.2;
   color: #2a7ae2;
   background: #eaf2fd;
   border: 1px solid #cfe2fa;
   border-radius: 999px;
-  padding: 0.32rem 0.9rem;
+  padding: 0.3rem 0.85rem;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .lang-toggle-btn::before {
   content: "\1F310";
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .lang-toggle-btn:hover,
@@ -192,6 +199,30 @@
   background: #dcebfc;
   border-color: #a9cdf5;
   outline: none;
+}
+
+/* Dauerhaft in der Kopfzeile, rechts neben der Navigation. */
+.lang-toggle-header {
+  float: right;
+  margin: 14px 0 0 22px;
+}
+
+.translation-missing {
+  font-size: 0.9rem;
+  color: #828282;
+  border-left: 3px solid #e8e8e8;
+  padding-left: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+@media screen and (max-width: 600px) {
+  /* Auf schmalen Schirmen sitzt die Navigation absolut rechts oben —
+     der Umschalter braucht Platz daneben. */
+  .lang-toggle-header {
+    margin: 11px 46px 0 0;
+    font-size: 0.72rem;
+    padding: 0.26rem 0.7rem;
+  }
 }
 
 /* ---------------------------------------------------- Grafiken */

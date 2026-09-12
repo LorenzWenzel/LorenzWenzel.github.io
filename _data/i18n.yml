@@ -1,0 +1,35 @@
+# Feste Oberflaechentexte. Jeder Schluessel existiert in beiden Sprachen.
+# Verwendung im Template:  {% include t.html key="erkenntnisse" %}
+de:
+  serien: "Serien"
+  serie_kicker: "Serie"
+  in_arbeit_kurz: "in Arbeit"
+  ein_beitrag: "1 Beitrag"
+  beitraege_suffix: "Beiträge"
+  weitere_beitraege: "Weitere Beiträge"
+  erkenntnisse: "Erkenntnisse"
+  in_arbeit: "In Arbeit"
+  in_arbeit_intro: "Die folgenden Teile sind angelegt, aber noch nicht geschrieben:"
+  nichts_veroeffentlicht: "Noch nichts veröffentlicht."
+  hero_lead: >-
+    Notizen zum Bauen von KI Projekten in der Cloud. Hier fließen Erkenntnisse aus
+    Arbeitsprojekten, privaten Projekten und Projekten aus selbstständiger Arbeit ein.
+  site_description: "Dokumentation von GenAI Cloud Projekten"
+  toggle_label: "English"
+
+en:
+  serien: "Series"
+  serie_kicker: "Series"
+  in_arbeit_kurz: "in progress"
+  ein_beitrag: "1 post"
+  beitraege_suffix: "posts"
+  weitere_beitraege: "More posts"
+  erkenntnisse: "Findings"
+  in_arbeit: "In progress"
+  in_arbeit_intro: "The following parts are planned but not yet written:"
+  nichts_veroeffentlicht: "Nothing published yet."
+  hero_lead: >-
+    Notes on building AI projects in the cloud — drawing on findings from work
+    projects, personal projects, and freelance engagements.
+  site_description: "Documenting GenAI cloud projects"
+  toggle_label: "Deutsch"

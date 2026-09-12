@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Chunking-Strategien"
+title_en: "Chunking Strategies"
 date: 2026-09-12 12:00:00 +0200
 serie: "RAG auf Verträgen in Azure"
 ---

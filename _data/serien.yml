@@ -1,16 +1,27 @@
 # Reihenfolge hier = Reihenfolge auf der Startseite.
+# titel/beschreibung sind deutsch, *_en die englische Fassung.
 - titel: "text2SQL-Agent auf AWS"
+  titel_en: "A text2SQL Agent on AWS"
   kategorie: text2sql-agent-aws
   url: /text2sql-agent-aws/
   beschreibung: >-
     Ein Agent, der natürlichsprachige Fragen in SQL übersetzt und gegen Amazon
     Athena ausführt — vom Rückgabeformat der Werkzeuge über die Herkunft des
     Domänenwissens bis zum Prompt Caching.
+  beschreibung_en: >-
+    An agent that turns natural-language questions into SQL and runs them against
+    Amazon Athena — from the return format of its tools and the origin of its
+    domain knowledge through to prompt caching.
 
 - titel: "RAG auf Verträgen in Azure"
+  titel_en: "RAG over Contracts in Azure"
   kategorie: rag-auf-vertraegen-in-azure
   url: /rag-auf-vertraegen-in-azure/
   beschreibung: >-
     Retrieval über deutschsprachige Mietverträge mit Azure AI Search und Azure
     OpenAI — Chunking entlang der Paragraphen, hybride Suche, Reranking, und die
     Frage, woran RAG bei Verträgen scheitert.
+  beschreibung_en: >-
+    Retrieval over German-language rental contracts with Azure AI Search and Azure
+    OpenAI — chunking along the paragraphs, hybrid search, reranking, and the
+    question of where RAG breaks down on contracts.

@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Die versteckten Kosten von MCP in Agenten"
+title_en: "The Hidden Cost of MCP in Agents"
 date: 2026-09-11 10:00:00 +0200
 ---
 

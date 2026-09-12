@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Domänenwissen über MCP oder über RAG?"
+title_en: "Domain Knowledge via MCP or via RAG?"
 date: 2026-09-11 09:00:00 +0200
 serie: "text2SQL-Agent auf AWS"
 ---

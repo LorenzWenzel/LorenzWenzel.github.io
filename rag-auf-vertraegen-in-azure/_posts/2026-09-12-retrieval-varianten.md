@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Retrieval-Varianten"
+title_en: "Retrieval Variants"
 date: 2026-09-12 09:00:00 +0200
 serie: "RAG auf Verträgen in Azure"
 ---
