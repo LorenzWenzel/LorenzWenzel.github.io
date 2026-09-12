@@ -30,12 +30,3 @@ Mietverträgen — gebaut mit **Azure Document Intelligence**, **Azure OpenAI** 
 {% else %}
 <p><em>Noch nichts veröffentlicht.</em></p>
 {% endif %}
-
-<h2 class="section-heading">In Arbeit</h2>
-
-<p>Die folgenden Teile sind angelegt, aber noch nicht geschrieben:</p>
-
-<ul class="todo-list">
-  <li><strong>Wie werden „offene“ Fragen in RAG gelöst?</strong> — „Was steht in § 5?“
-  beantwortet Top-k gut. „Welche Verträge laufen 2026 aus?“ strukturell gar nicht.</li>
-</ul>
