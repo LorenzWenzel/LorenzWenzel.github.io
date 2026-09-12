@@ -16,7 +16,7 @@ layout: default
   {%- assign anzahl = site.categories[s.kategorie] | size %}
   <li>
     <a class="card" href="{{ s.url | relative_url }}">
-      <span class="card-kicker">Serie · {% if anzahl > 0 %}{{ anzahl }} Beiträge{% else %}in Arbeit{% endif %}</span>
+      <span class="card-kicker">Serie · {% if anzahl == 0 %}in Arbeit{% elsif anzahl == 1 %}1 Beitrag{% else %}{{ anzahl }} Beiträge{% endif %}</span>
       <span class="card-title">{{ s.titel }}</span>
       <span class="card-desc">{{ s.beschreibung }}</span>
     </a>
