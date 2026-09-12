@@ -6,15 +6,21 @@ permalink: /text2sql-agent-aws/
 ---
 
 <div data-lang-block="de" markdown="1">
-Eine Serie über den Bau eines Agenten, der natürlichsprachige Fragen in SQL
-übersetzt, die Abfrage gegen **Amazon Athena** ausführt und das Ergebnis
-verständlich zurückgibt.
+Dieses Projekt ist im Rahmen meiner Arbeit entstanden. Aus Gründen der
+Vertraulichkeit zeige ich hier nicht die produktive Implementierung, sondern
+eine vereinfachte, generalistische Version eines text2SQL-Agenten auf AWS.
+Die Fragen und Learnings, die ich in den einzelnen Beiträgen bespreche, sind
+reale Entscheidungen, vor denen ich bei der Umsetzung stand, hier jedoch in
+verallgemeinerter Form, ohne Details aus dem produktiven Projekt.
 </div>
 
 <div data-lang-block="en" markdown="1">
-A series on building an agent that translates natural-language questions into
-SQL, runs the query against **Amazon Athena**, and returns the result in plain
-language.
+This project was created as part of my work. For confidentiality reasons, I'm
+not showing the production implementation here, but a simplified, generic
+version of a text2SQL agent on AWS. The questions and learnings I discuss in
+the individual posts are real decisions I faced during implementation, but
+presented here in generalized form, without details from the production
+project.
 </div>
 
 ![Übersicht: Der Nutzer fragt den Chatbot. Der Chatbot ruft Amazon Bedrock für das Modell auf und den MCP-Server für die Werkzeuge. Der MCP-Server führt SQL auf Amazon Athena aus, Athena liest aus Amazon S3.](/assets/img/text2sql_architecture.jpeg)
