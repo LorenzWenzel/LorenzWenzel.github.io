@@ -97,6 +97,47 @@ hochdimensionalen Raum abgebildet — im POC über `text-embedding-3-small` mit
 sein. „Wann kann ich raus aus dem Vertrag?" landet dann in der Nähe von
 „Beendigung des Mietverhältnisses", ohne ein Wort gemeinsam zu haben.
 
+### Von Wörtern zu Vektoren
+
+Woher diese Nähe kommt, lohnt einen kurzen Umweg, weil er erklärt, warum
+Embeddings ausgerechnet an Kennungen scheitern.
+
+Die Grundannahme ist so alt wie schlicht: Wörter, die in ähnlichen Kontexten
+auftauchen, haben eine ähnliche Bedeutung — *„a word is characterized by the
+company it keeps"*. Man sieht sich dafür in Millionen von Texten an, welche
+Wörter jeweils links und rechts neben einem Zielwort stehen.
+
+Ein Beispiel mit einem Fenster von zwei Nachbarwörtern:
+
+- „Der **König** regiert das Land."
+- „Der **Herrscher** regiert das Land."
+- „Die **Königin** regiert das Land."
+
+„König", „Herrscher" und „Königin" tauchen in fast identischen Kontexten auf —
+umgeben von „Der/Die" und „regiert das Land". Ein Modell, das aus dem Kontext
+das Zielwort vorhersagen soll (oder umgekehrt), lernt daraus, dass sich die drei
+Wörter semantisch ähneln, und ordnet ihnen entsprechend nahe beieinanderliegende
+Vektoren zu. „Fahrrad" oder „Banane" tauchen in völlig anderen Kontexten auf und
+landen im Vektorraum weit entfernt.
+
+Diese Grundidee ist bis heute unverändert. Was sich geändert hat, ist die
+Architektur, mit der sie umgesetzt wird. Statt eines festen Zwei-Wort-Fensters
+und eines flachen neuronalen Netzes — wie bei word2vec — betrachten heutige
+Modelle mit tiefen Transformer-Architekturen und Self-Attention den gesamten
+Satz oder Absatz gleichzeitig und gewichten dabei dynamisch, welche Wörter für
+die Bedeutung eines anderen Wortes relevant sind. Dadurch werden Embeddings
+**kontextabhängig** — „Bank" bekommt je nach Satz („Ich sitze auf der Bank" vs.
+„Ich gehe zur Bank") einen unterschiedlichen Vektor, was mit dem einfachen
+Nachbarschaftsprinzip allein nicht möglich wäre. Erst die Rechenleistung und die
+Trainingsdatenmengen, die heute zur Verfügung stehen, machen diese deutlich
+komplexeren Modelle praktikabel.
+
+Für Verträge ist das kein Nebenaspekt: Dasselbe Prinzip, das „König" und
+„Herrscher" zusammenrückt, rückt auch `WE 03.12` und `WE 03.13` zusammen — beide
+tauchen in praktisch identischen Kontexten auf, und keiner davon hilft dem
+Modell, sie auseinanderzuhalten. Was bei Bedeutung die Stärke ist, ist bei
+Identität die Schwäche.
+
 Azure AI Search sucht darin mit **HNSW**, einem Näherungsverfahren: ein
 hierarchischer Graph, in dem jeder Punkt mit bis zu `m` Nachbarn verbunden ist
 und die Suche sich von groben zu feinen Ebenen durchhangelt. `efConstruction`
@@ -210,38 +251,12 @@ herauskommt. `maxTextRecallSize` ist nicht gesetzt und steht damit auf 1 000 —
 die Volltextseite sucht deutlich breiter, als die 60 vermuten lassen, und liefert
 RRF eine entsprechend lange Liste zu.
 
-## Was ich für diesen Korpus daraus schließe
+## Was ich daraus schließe
 
 **Hybrid ist hier nicht die vorsichtige Mitte, sondern die einzige Variante, die
 beide Fragetypen bedienen kann.** Bei einem Korpus aus Fließtext könnte man über
 reine Vektorsuche diskutieren; bei einem, in dem `GUT57` und `WE 03.12` die
 Identität tragen, nicht.
-
-Drei Dinge würde ich am POC prüfen:
-
-- **`maxTextRecallSize` bewusst setzen.** Die Voreinstellung 1 000 gegen 60
-  Vektor-Nachbarn ist ein ungleiches Verhältnis. Ob das der Fusion hilft oder
-  sie mit schwachen BM25-Treffern flutet, entscheidet eine Messung.
-- **Vektor-Gewichtung testen.** Azure erlaubt einen Multiplikator auf die
-  Vektorseite vor der Fusion. Für einen Korpus mit vielen Kennungen wäre ein
-  Wert unter 1,0 plausibel — belegt ist das nicht.
-- **`featuresMode` einschalten.** Die Vorschau-Option liefert je Feld die
-  Teilscores einer BM25-Bewertung. Bei „warum ist dieser Chunk oben?" ist das
-  der Unterschied zwischen Nachsehen und Raten.
-
-## Methodik
-
-Das Skript liegt unter
-[`assets/bench/retrieval-varianten.py`](/assets/bench/retrieval-varianten.py).
-Es rechnet die BM25-Formel mit den Azure-Parametern (`k1 = 1,2`, `b = 0,75`) auf
-einem Miniaturkorpus aus sechs Vertragsabschnitten nach und führt die
-RRF-Arithmetik vor. **Es misst nicht Azure**, sondern baut die Mechanik nach —
-die absoluten Scores eines echten Index sehen anders aus, die Verhältnisse nicht.
-
-Die Tokenisierung ist mit `cl100k_base` gerechnet, dem Tokenizer der
-`text-embedding-3`-Familie. Der Analyzer auf der BM25-Seite ist ein anderer
-(`de.microsoft`) und zerlegt Kennungen anders — der Vergleich im Abschnitt zu
-den Embeddings betrifft ausschließlich die Vektorseite.
 
 ---
 
