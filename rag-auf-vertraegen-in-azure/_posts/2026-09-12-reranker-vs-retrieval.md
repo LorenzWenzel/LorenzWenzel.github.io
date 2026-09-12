@@ -116,12 +116,6 @@ eine zweite Sortierung auf einer bestehenden Liste, keine zweite Suche. Und
 diese Liste ist gedeckelt: *„Even if results include more than 50 results, only
 the top 50 results progress to semantic ranking."*
 
-Der POC holt 60 Kandidaten. Die Plätze 51 bis 60 der Fusionsliste werden also
-geholt, aber nicht mehr semantisch bewertet — sie landen ohne Reranker-Score am
-Ende, und der Code fällt für sie auf `@search.score` zurück. Das ist kein
-Fehler, aber es heißt: Die letzten zehn Kandidaten haben praktisch keine Chance
-mehr, nach oben zu wandern.
-
 ## Der Unterschied, der praktisch zählt
 
 Retrieval und Reranking arbeiten an verschiedenen Problemen, und man kann das
