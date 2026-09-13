@@ -12,8 +12,11 @@ de:
   in_arbeit_intro: "Die folgenden Teile sind angelegt, aber noch nicht geschrieben:"
   nichts_veroeffentlicht: "Noch nichts veröffentlicht."
   hero_lead: >-
-    Notizen zum Bauen von KI Projekten in der Cloud. Hier fließen Erkenntnisse aus
-    Arbeitsprojekten, privaten Projekten und Projekten aus selbstständiger Arbeit ein.
+    Erkenntnisse und Entscheidungen zum Bauen von KI Projekten in der Cloud. Hier
+    fließen Erkenntnisse aus Arbeitsprojekten, privaten Projekten und Projekten aus
+    selbstständiger Arbeit ein. Es bietet keine Garantie auf Vollständigkeit,
+    sondern bildet lediglich die für mich interessantesten Entscheidungen bei KI-
+    und Cloudfragen ab. Reine Cloudprojekte werden hier nicht aufgeführt.
   site_description: "Dokumentation von GenAI Cloud Projekten"
   toggle_label: "English"
 
@@ -29,7 +32,9 @@ en:
   in_arbeit_intro: "The following parts are planned but not yet written:"
   nichts_veroeffentlicht: "Nothing published yet."
   hero_lead: >-
-    Notes on building AI projects in the cloud — drawing on findings from work
-    projects, personal projects, and freelance engagements.
+    Findings and decisions on building AI projects in the cloud, drawing on work
+    projects, personal projects, and freelance engagements. It makes no claim to
+    completeness — it simply reflects the decisions on AI and cloud questions that
+    I find most interesting. Pure cloud projects aren't covered here.
   site_description: "Documenting GenAI cloud projects"
   toggle_label: "Deutsch"
