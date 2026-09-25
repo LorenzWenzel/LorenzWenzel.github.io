@@ -1,5 +1,5 @@
 {%- assign leer = "" | split: "," -%}
-{%- assign serie = site.categories[include.kategorie] | default: leer | sort: 'date' -%}
+{%- assign serie = site.categories[include.kategorie] | default: leer | sort: 'date' | reverse -%}
 
 <h2 class="section-heading">{% include t.html key="erkenntnisse" %}</h2>
 
