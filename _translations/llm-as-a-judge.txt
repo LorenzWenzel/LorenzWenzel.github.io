@@ -1,0 +1,312 @@
+---
+slug: llm-as-a-judge
+title: "LLM-as-a-Judge: Evaluating the Agent's Decisions"
+---
+
+Every post in this series has optimized something: the output format, the length
+of tool chains, the cache, the conversation history. None of them measured whether
+the agent answers correctly in the first place. That's the gap this post is about.
+
+With text2SQL, "correct" is harder to pin down than it sounds. Two completely
+different queries can return the same result. The same query with a different sort
+order returns a seemingly different one. And a wrong query returns a number that
+looks every bit as plausible as the right one.
+
+## Three things you can measure
+
+Anyone who wants to "evaluate the agent" is really evaluating three different
+things, and they need different tools:
+
+| What | Question | How | Level |
+|---|---|---|---|
+| **Result** | Does the SQL return the right numbers? | Execute and compare with a reference | Trace |
+| **Decision path** | Right table, right tools, few steps, a clarifying question when things are ambiguous? | Trajectory against expectation | Session / tool call |
+| **Answer** | Does the text render the result correctly? | Answer against tool output | Trace |
+
+The first row has an established name: **execution accuracy**. You run the
+generated SQL and a reference SQL and compare the result sets. It's deterministic,
+needs no language model, and is the backbone of any text2SQL evaluation.
+
+It isn't flawless, though. An extra column, different rounding, a different order
+— and a substantively correct query counts as wrong. Conversely, a wrong query can
+count as "right" because the test data happens to mask the error: a missing region
+filter goes unnoticed if the data only contains one region. The FLEX paper (Kim et
+al., NAACL 2025) measured this against expert judgments: execution accuracy reaches
+a Cohen's kappa of **62**, an LLM judge that sees the question, schema and domain
+knowledge reaches **87**
+([FLEX](https://aclanthology.org/2025.naacl-long.228/)). Model rankings on Spider
+and BIRD shift as a result.
+
+From this follows the division of labor this post revolves around: **compare
+deterministically first, and use the judge where the comparison can't decide.**
+
+## The silent failure
+
+The obvious step — a language model reads question and answer and rules on whether
+it's right — has a blind spot with text2SQL, and it's built in by design.
+
+![Zwei Zeilen. Oben ein Judge ohne Referenz: Der Agent schreibt SUM(gross_revenue) statt netto, Athena liefert 4,21 Millionen, die Antwort gibt 4,21 Millionen wieder, und der Judge bewertet sie als Perfectly Correct, weil sie zum Tool-Output passt. Unten ein Judge mit Referenz: Das Golden SQL mit SUM(net_revenue) liefert 3,58 Millionen, der Vergleich ergibt eine Abweichung und das Urteil FAIL.](/assets/img/judge-stiller-fehler.svg)
+
+The built-in correctness evaluator in AgentCore Evaluations contains this sentence
+in its prompt: *"The tool output ALWAYS takes priority over your own knowledge."*
+For most agents that's the right rule — the judge shouldn't pit its own world
+knowledge against a fresh database query. For text2SQL, though, it means: if the
+SQL was wrong, the tool output is wrong, the answer renders it faithfully, and the
+judge rates it as correct.
+
+**A judge without a reference measures consistency, not correctness.**
+Consistency is necessary — an answer that contradicts its own result is certainly
+wrong. It isn't sufficient.
+
+The problem isn't new. In the MT-Bench paper (Zheng et al., NeurIPS 2023), GPT-4
+graded simple math problems wrongly *even though it could solve them itself* — it
+was led astray by the answer in front of it. With a reference solution in the
+prompt, the failure rate dropped from **14 in 20 to 3 in 20**
+([MT-Bench](https://arxiv.org/abs/2306.05685)). With text2SQL the SQL under review
+is the same trap: whoever reads it gets steered by it.
+
+## How strong does the judge need to be?
+
+The question "a better or a cheaper model than the generator?" has a clear answer,
+but it hinges on a different question: **does the judge have a reference?**
+
+**With a reference, a small model is enough.** The judge then doesn't have to
+solve the task, only compare two things: the generated SQL against the reference
+SQL, the expected tool log against the actual one. Comparing is easier than
+generating. In its own examples for ground-truth evaluators, AWS uses Claude Haiku
+4.5 at `temperature = 0` — not the strongest model available, but the cheapest one
+that reliably handles the comparison.
+
+**Without a reference, the judge has to master the task itself.** It has to decide
+whether `SUM(gross_revenue)` is the right answer to the question, and it can only
+do that if it knows better. The research here is sobering: on JudgeBench, strong
+models like GPT-4o barely beat random guessing on difficult response pairs
+([JudgeBench](https://arxiv.org/abs/2410.12784)); in *Judging the Judges*, only the
+largest models reach usable agreement with humans, and even they stay well below
+agreement among humans ([Thakur et al.](https://arxiv.org/abs/2406.12624)). A judge
+without a reference should be at least as strong as the generator.
+
+**And it shouldn't be the generator.** Language models recognize their own text and
+prefer it; Panickssery et al. found a linear relationship between self-recognition
+and self-preference ([2024](https://arxiv.org/abs/2404.13076)). In MT-Bench, GPT-4
+and Claude-v1 gave themselves a 10% and 25% higher win rate respectively than human
+raters did — though the authors don't yet consider that conclusive at their data
+volume. If you run Claude Sonnet 5 as the generator and want to judge without a
+reference, use a different model — on Bedrock, if need be, from a different family.
+
+**Above all, it needs the same knowledge.** The
+[domain knowledge post](/text2sql-agent-aws/2026/09/11/domaenenwissen-mcp-oder-rag.html)
+was about the twenty percentage points a single sentence of domain knowledge is
+worth on BIRD. The same arithmetic applies to the judge: a judge that doesn't know
+"revenue" means net will rate the gross-revenue SQL as correct — regardless of how
+large it is.
+
+For this agent, that yields the following split:
+
+| Task | Reference | Judge | Why |
+|---|---|---|---|
+| Compare result sets | Golden result set | **no model** — code | deterministic, cheap, reproducible |
+| SQL equivalence where the result differs | Golden SQL | **Haiku 4.5**, `temperature = 0` | comparison, not solution |
+| Trajectory against expectation | expected tool sequence | **Haiku 4.5** | list comparison |
+| Plausibility in production | none | **Opus 5** or another family, definitions in the prompt | has to solve the task itself |
+
+And before trusting a judge, you measure it: have humans rate fifty to a hundred
+cases and report agreement as Cohen's kappa, not as a percentage. Percent agreement
+looks good even when the judge waves almost everything through — which is exactly
+what Thakur et al. warn about.
+
+## Your own golden set
+
+Public benchmarks help little here, and not only because they don't reflect your
+own data lake. A 2026 study checked the annotations of BIRD and Spider 2.0-Snow and
+found error rates of **52.8%** and **66.1%**; after correction, one agent jumped
+from 4th place to 1st ([Jin et al.](https://arxiv.org/abs/2601.08778)). Measure
+your agent against a benchmark and you're largely measuring the benchmark's
+mistakes.
+
+Your own golden set consists of real questions, and each has four parts: the
+reference SQL, the expected result, the expected tool sequence, and assertions in
+plain words — say, "asks for clarification when no time period is given." It's
+signed off by the business side, not by the developer. Otherwise you're measuring
+whether the agent thinks like the person who built it.
+
+Which leaves the question from this post's draft: **how many questions does it take
+before an improvement is no longer noise?**
+
+![Liniendiagramm: nachweisbarer Unterschied in Prozentpunkten über die Anzahl Golden-Fragen. Gepaart, also dieselben Fragen für beide Versionen: 18,2 Punkte bei 50 Fragen, 10,6 bei 100, 6,3 bei 200, 3,9 bei 400, 2,5 bei 800. Ungepaart: 22,4 bei 50, 15,8 bei 100, 11,2 bei 200, 7,9 bei 400, 5,6 bei 800, 2,8 bei 3200. Drei Punkte sind gepaart ab etwa 600 Fragen nachweisbar, ungepaart erst ab etwa 2800 je Version.](/assets/img/judge-stichprobe.svg)
+
+More than you'd hope. With a hundred questions you can demonstrate an improvement
+of ten percentage points, not three. Three points take around **600** questions —
+and only if both versions run over **the same** questions and you count the ones
+that flip. Compare separate samples instead, say two weeks of production traffic,
+and it's around **2,800 per version**. The practical rule: always compare changes
+pairwise on the same set, and distrust small differences on small sets.
+
+## Detour: Amazon Bedrock AgentCore Evaluations
+
+AWS built a dedicated service for exactly this purpose. AgentCore Evaluations has
+been generally available since **31 March 2026**, including in Frankfurt
+([announcement](https://aws.amazon.com/about-aws/whats-new/2026/03/agentcore-evaluations-generally-available)).
+It reads an agent's OpenTelemetry traces from CloudWatch, converts them into a
+unified format and scores them with LLM-as-a-judge at three levels: whole session,
+single trace, single tool call
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations.html)).
+
+It ships with a good dozen **built-in evaluators** whose model and prompt are
+fixed: goal success rate and correctness (each also with ground truth),
+faithfulness, helpfulness, instruction following, coherence, conciseness, response
+relevance, plus harmfulness, stereotyping and refusal — and for the decision path,
+**tool selection accuracy** and **tool parameter accuracy**. For a text2SQL agent,
+the tool's parameter is the SQL itself; tool parameter accuracy is therefore an
+evaluation of the query — with exactly the limits described above.
+
+**Custom evaluators** are the more interesting part. You pick the judge model
+freely from the foundation models on Bedrock, write the instruction yourself,
+define the scale, and get placeholders for context, answer, tool call — and for
+ground truth: `expected_response`, `expected_tool_trajectory` and `assertions`
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/create-evaluator.html)).
+Instead of a model, a **Lambda function** can also do the judging, receiving the
+session's spans and the references — deterministic checks without a judge. AWS's
+recommendations for custom judges match the state of the research: start with a
+binary scale, put one to three examples into the instruction, one evaluator per
+dimension, and the reasoning before the score — the service enforces that itself.
+
+There are three modes, and the boundary between them is the reference. **Online**
+scores a share of production traffic, say ten percent of sessions — but without
+ground truth; the service doesn't even allow evaluators with reference placeholders
+there. **On-demand** and **batch** score selected sessions or all sessions in a
+time window, batch also with references. A **dataset runner** (still in preview)
+replays a golden set, waits for the telemetry and scores it — that's the building
+block for the release pipeline.
+
+Pricing: built-in evaluators cost \$2.40 per million input and \$12 per million
+output tokens, model included; custom evaluators \$1.50 per thousand evaluations
+plus the judge model
+([pricing](https://aws.amazon.com/bedrock/agentcore/pricing/)).
+
+## And with Converse + MCP?
+
+In the [AgentCore post](/text2sql-agent-aws/2026/09/11/bedrock-agentcore-vs-converse-mcp.html)
+the decision went against the AgentCore harness: the loop stays in our own hands,
+Converse plus MCP, because almost every lever in this series sits inside it. The
+obvious worry is that this also rules out AgentCore Evaluations. **It doesn't.** The
+service evaluates traces, not the harness; the docs state explicitly that it can
+evaluate agents *"hosted under AgentCore Runtime as well as AI agents hosted outside
+of AgentCore"*
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/how-it-works-evaluations.html)).
+
+What it takes is clean telemetry, and that's where the actual work lies:
+
+- **With Strands as the loop** — the route from the AgentCore post — there's nothing
+  more to do. Strands is one of the directly supported frameworks.
+- **With a hand-written Converse loop**, generic support applies: spans following
+  the OpenTelemetry GenAI conventions, with `gen_ai.operation.name` = `invoke_agent`,
+  `chat` and `execute_tool`
+  ([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-generic.html)).
+  The trap: automatic instrumentation of `botocore` and MCP isn't enough — the
+  service excludes exactly those scopes. You have to instrument the agent level
+  yourself.
+- **At minimum**, the attributes `agentcore.invocation.user_prompt` and
+  `agentcore.invocation.agent_response` suffice. That lets you evaluate the answer,
+  but not the decision path — without tool spans there's no trajectory.
+
+On top of that come CloudWatch Transaction Search and ADOT; outside the Runtime you
+name the target log group via an environment variable
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-telemetry.html)).
+So owning the loop doesn't cost you the evaluation service — it costs an afternoon
+of instrumentation.
+
+![Links der Agent mit eigener Schleife (Strands, Converse und MCP) auf AgentCore Runtime oder Fargate, instrumentiert mit ADOT und OpenTelemetry-GenAI-Spans. Die Telemetrie landet in CloudWatch mit Transaction Search. AgentCore Evaluations liest daraus in zwei Bahnen: Online bewertet zehn Prozent der Produktionssessions ohne Referenz, Batch und Dataset bewerten vor jedem Release ein Golden Set mit Referenz, darunter ein Lambda, das das SQL auf Athena ausführt. Schlecht bewertete Sessions gehen an einen Menschen und werden zu neuen Golden-Fragen.](/assets/img/judge-aws-aufbau.svg)
+
+The setup I'd recommend for this agent has two lanes:
+
+**Before every release — with a reference.** The golden set runs through the
+dataset or batch route. A **Lambda evaluator** pulls the SQL out of the `run_query`
+span, runs it on Athena and compares it with the precomputed reference result —
+execution accuracy, no model involved. Where the result differs, a **custom judge
+with Haiku 4.5** uses `expected_response` to check whether the query is equivalent
+anyway — the FLEX idea. A second custom judge compares the **trajectory** with the
+expected tool sequence, a third checks the **assertions**. The trajectory isn't just
+a quality metric but a cost metric too: as the
+[MCP cost post](/text2sql-agent-aws/2026/09/11/kosten-von-mcp-in-agenten.html)
+showed, an agent that calls the same six tools in six steps instead of one costs
+2.8 times as much.
+
+**In production — without a reference.** Online evaluation on a share of sessions,
+with what can be checked without ground truth: tool choice and parameters,
+faithfulness of the answer to the result, a **plausibility judge with a strong
+model** that has the metric definitions fixed in its instruction — the built-in
+evaluators only see what's in the trace — and a Lambda rule check: partition filter
+set, no `SELECT *`, no more than four steps.
+
+**The human in between.** The online lane won't reliably catch the silent failure;
+it isn't built for that. What it can do is supply candidates: poorly rated sessions
+go to human review, and confirmed errors become new golden questions. That's how the
+golden set grows out of the questions people actually ask.
+
+It would work without AgentCore Evaluations too: with a self-built judge via the
+Converse API, or with Bedrock's model evaluation jobs, which accept external
+responses and allow custom metrics
+([docs](https://docs.aws.amazon.com/bedrock/latest/userguide/evaluation-judge.html)).
+The latter evaluate prompt-response pairs, though, not trajectories — which leaves
+out exactly the half that matters here, the agent's decision-making. Either way,
+you build sampling, storage and dashboards yourself.
+
+## What it costs
+
+Per evaluation, the judge sees the question, a schema excerpt, definitions, SQL, a
+result excerpt and the answer — around 6,000 tokens in, 400 out. Per thousand
+evaluated questions:
+
+| Judge | \$ / 1,000 evaluations | Share of the agent's bill | at 10% sampling |
+|---|---:|---:|---:|
+| Built-in (model included) | 19.20 | 25% | 2.5% |
+| Custom + Haiku 4.5 | 9.50 | 12.5% | 1.2% |
+| Custom + Sonnet 5 | 17.50 | 23% | 2.3% |
+| Custom + Opus 5 | 41.50 | 55% | 5.5% |
+
+From the earlier posts, the agent's own bill is around \$76 per thousand questions
+(Sonnet 5, with caching). Evaluating every production question with Opus 5 makes the
+agent more than half again as expensive; at ten percent sampling it's just over five
+percent. A golden-set run with 300 questions and three Opus evaluators costs around
+\$37 — per release, not per day. **Offline, evaluation is cheap. Online, sampling
+decides.**
+
+## What I take from this
+
+**LLM-as-a-judge isn't the measurement, it's the last step of it.** First comes
+whatever can be done deterministically: run the SQL, compare results, check rules.
+Then judges with a reference, for what the comparison can't decide. And judges
+without a reference only where no reference can exist — in production.
+
+The question "a stronger or weaker model than the generator?" is the wrong one. The
+right one is: **does the judge have a reference?** With a reference, a small model
+is enough. Without one, it has to be at least as good as the generator, must not be
+the generator — and needs the same domain knowledge, or it grades against its own
+assumptions.
+
+## Method
+
+Sample sizes and costs are calculated, not measured; the script is in the repo at
+[`assets/bench/llm-judge.py`](/assets/bench/llm-judge.py). The sample-size
+calculation assumes an accuracy of around 80%, α = 0.05 and 80% power; for the
+paired case (McNemar), additionally that 2% of questions flip in each direction with
+a change. The costs assume 6,000 input and 400 output tokens per evaluation, Claude
+API list prices for the judge model, and AgentCore prices as of September 2026;
+Bedrock has its own model pricing. The claims about judge quality come from the
+linked papers and were not re-measured on my own data.
+
+---
+
+**In short:** A text2SQL agent is evaluated on three levels — result, decision path,
+answer. You measure the result deterministically first (execution accuracy) and use
+a judge only where the comparison can't decide. A judge without a reference measures
+consistency, not correctness: it rates an answer as correct that faithfully renders
+a wrong SQL query. With a reference, a small model like Haiku 4.5 is enough; without
+one, the judge has to be at least as strong as the generator, come from a different
+family, and have the same domain knowledge. A three-point difference takes around 600
+paired golden questions. AgentCore Evaluations also evaluates agents with their own
+loop built on Converse and MCP — all it needs is clean OpenTelemetry spans.
+Recommended: a golden set with Lambda-based execution accuracy and reference judges
+before every release, online sampling without a reference in production, and a human
+in between who turns poorly rated sessions into new golden questions.

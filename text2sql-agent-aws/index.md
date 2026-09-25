@@ -32,11 +32,6 @@ project.
 <p>{% include t.html key="in_arbeit_intro" %}</p>
 
 <ul class="todo-list">
-  <li data-lang-block="de"><strong>Wie misst man den Erfolg von text2SQL-Agenten?</strong> — Execution
-  Accuracy, eigene Golden Queries, und der stille Fehler: plausible, aber falsche Zahlen.</li>
-  <li data-lang-block="en"><strong>How do you measure the success of a text2SQL agent?</strong> — Execution
-  accuracy, your own golden queries, and the silent failure: plausible but wrong numbers.</li>
-
   <li data-lang-block="de"><strong>Wie kommt der Agent an die Tabellenschemata?</strong> — Glue Data Catalog,
   <code>INFORMATION_SCHEMA</code>, vorgerechnete Schema-Karten: Vergleich der Zugänge.</li>
   <li data-lang-block="en"><strong>How does the agent get the table schemas?</strong> — Glue Data Catalog,
