@@ -285,17 +285,6 @@ is enough. Without one, it has to be at least as good as the generator, must not
 the generator — and needs the same domain knowledge, or it grades against its own
 assumptions.
 
-## Method
-
-Sample sizes and costs are calculated, not measured; the script is in the repo at
-[`assets/bench/llm-judge.py`](/assets/bench/llm-judge.py). The sample-size
-calculation assumes an accuracy of around 80%, α = 0.05 and 80% power; for the
-paired case (McNemar), additionally that 2% of questions flip in each direction with
-a change. The costs assume 6,000 input and 400 output tokens per evaluation, Claude
-API list prices for the judge model, and AgentCore prices as of September 2026;
-Bedrock has its own model pricing. The claims about judge quality come from the
-linked papers and were not re-measured on my own data.
-
 ---
 
 **In short:** A text2SQL agent is evaluated on three levels — result, decision path,

@@ -301,18 +301,6 @@ reicht ein kleines Modell. Ohne muss er mindestens so gut sein wie der
 Generator, darf nicht der Generator sein — und braucht dasselbe Fachwissen, sonst
 bewertet er gegen seine eigenen Annahmen.
 
-## Methodik
-
-Stichprobengröße und Kosten sind gerechnet, nicht gemessen; das Skript liegt als
-[`assets/bench/llm-judge.py`](/assets/bench/llm-judge.py) im Repo. Die
-Stichprobenrechnung nimmt eine Trefferquote um 80 %, α = 0,05 und 80 % Power an;
-für den gepaarten Fall (McNemar) zusätzlich, dass je 2 % der Fragen bei einer
-Änderung in beide Richtungen kippen. Die Kosten rechnen mit 6 000 Input- und 400
-Output-Token je Bewertung, Claude-API-Listenpreisen für das Judge-Modell und den
-AgentCore-Preisen vom September 2026; auf Bedrock gelten eigene Modellpreise.
-Die Aussagen zur Judge-Qualität stammen aus den verlinkten Arbeiten und sind
-nicht an einem eigenen Datenbestand nachgemessen.
-
 ---
 
 **Kurzfassung:** Ein text2SQL-Agent wird auf drei Ebenen bewertet — Ergebnis,
