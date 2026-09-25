@@ -2,7 +2,7 @@
 layout: post
 title: "Die versteckten Kosten von MCP in Agenten"
 title_en: "The Hidden Cost of MCP in Agents"
-date: 2026-09-11 10:00:00 +0200
+date: 2026-06-09 21:15:00 +0200
 ---
 
 Der Titel führt bewusst ein wenig in die Irre. Es geht hier nicht in erster
@@ -317,7 +317,7 @@ Wirkung auf n.
 **Das Ergebnis kleiner machen.** Jede Zeile, die ein Tool zurückgibt, wird in
 jedem Folgeturn erneut abgerechnet. Ein Limit im Werkzeug wirkt deshalb
 multiplikativ mit der Kettentiefe – dazu mehr in
-[Welches Format sollten MCP-Funktionen zurückgeben?]({% post_url 2026-09-11-mcp-ausgabeformate %})
+[Welches Format sollten MCP-Funktionen zurückgeben?]({% post_url 2026-04-21-mcp-ausgabeformate %})
 
 **Alte Tool-Ergebnisse aus dem Verlauf räumen.** Wenn Schritt 1 nur dazu
 diente, den Tabellennamen zu finden, muss sein vollständiges Ergebnis in

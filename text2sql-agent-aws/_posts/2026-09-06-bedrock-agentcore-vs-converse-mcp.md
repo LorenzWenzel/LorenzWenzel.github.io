@@ -2,7 +2,7 @@
 layout: post
 title: "Bedrock AgentCore vs. Converse + MCP"
 title_en: "Bedrock AgentCore vs. Converse + MCP"
-date: 2026-09-11 13:00:00 +0200
+date: 2026-09-06 19:55:00 +0200
 serie: "text2SQL-Agent auf AWS"
 ---
 
@@ -76,7 +76,7 @@ Athena-Rechten des Nutzers unterwegs ist, ist das kein kosmetischer Punkt.
 
 **Der Gesprächsverlauf** landet beim Harness in AgentCore Memory, mit einem
 gleitenden Fenster von 30 Nachrichten als Voreinstellung. Wer den
-[Historie-Beitrag]({% post_url 2026-09-11-historie-bei-chatbots %}) gelesen hat,
+[Historie-Beitrag]({% post_url 2026-07-23-historie-bei-chatbots %}) gelesen hat,
 sieht das Problem: Ein Fenster, das nach *Nachrichten* zählt, behält
 Tool-Ergebnisse vollständig – und die machen rund 84 % des Verlaufs aus. Die
 Alternative `summarization` gibt es; die Regel „SQL behalten, Zeilen ersetzen"
@@ -91,7 +91,7 @@ Spalte eins setzt man den `cachePoint` selbst, in Spalte zwei sagt man Strands
 Dokumentationsseiten, die ich gelesen habe, ob und wo Cache-Punkte gesetzt
 werden. Da der Harness auf Strands läuft, ist es wahrscheinlich; belegt ist es
 nicht. Die Prüfung ist dieselbe wie im
-[Caching-Beitrag]({% post_url 2026-09-11-prompt-caching-pflicht %}): Die
+[Caching-Beitrag]({% post_url 2026-06-28-prompt-caching-pflicht %}): Die
 `metadata`-Events des Streams liefern die Token-Nutzung – steht dort bei
 `cacheReadInputTokens` dauerhaft null, zahlt man den vollen Präfix bei jedem
 Aufruf, und die Rechnung aus jenem Beitrag gilt mit umgekehrtem Vorzeichen.
@@ -100,7 +100,7 @@ Aufruf, und die Rechnung aus jenem Beitrag gilt mit umgekehrtem Vorzeichen.
 
 Die Modellrechnung. Beide Wege rufen dasselbe Modell über dieselbe API mit
 demselben Verlauf auf. Die n+1-Regel aus
-[Kosten von MCP in Agenten]({% post_url 2026-09-11-kosten-von-mcp-in-agenten %})
+[Kosten von MCP in Agenten]({% post_url 2026-06-09-kosten-von-mcp-in-agenten %})
 gilt unverändert: eine n-stufige Werkzeugkette kostet n+1 Modellaufrufe, egal
 wer die Schleife betreibt. Das Gateway ist ein Hop mehr auf dem Weg zum
 Werkzeug, aber kein Modellaufruf mehr.

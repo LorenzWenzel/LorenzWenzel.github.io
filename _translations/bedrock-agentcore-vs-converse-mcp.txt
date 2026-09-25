@@ -72,7 +72,7 @@ that's not a cosmetic point.
 
 **The conversation history** lands in AgentCore Memory with the harness, with a
 sliding window of 30 messages by default. Anyone who read the
-[history post](/text2sql-agent-aws/2026/09/11/historie-bei-chatbots.html) sees the problem:
+[history post](/text2sql-agent-aws/2026/07/23/historie-bei-chatbots.html) sees the problem:
 a window counting *messages* keeps tool results in full — and those make up around
 84% of the transcript. The `summarization` alternative exists; the rule "keep the
 SQL, replace the rows" does not exist as a configuration.
@@ -86,7 +86,7 @@ the `cachePoint` yourself; in column two you tell Strands
 documentation pages I read states whether and where cache points are set. Since
 the harness runs on Strands, it's likely; it isn't documented. The check is the
 same as in the
-[caching post](/text2sql-agent-aws/2026/09/11/prompt-caching-pflicht.html): the stream's
+[caching post](/text2sql-agent-aws/2026/06/28/prompt-caching-pflicht.html): the stream's
 `metadata` events carry token usage — if `cacheReadInputTokens` permanently reads
 zero, you're paying the full prefix on every call, and the arithmetic from that
 post applies with the sign reversed.
@@ -95,7 +95,7 @@ post applies with the sign reversed.
 
 The model bill. Both ways call the same model through the same API with the same
 transcript. The n+1 rule from
-[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/09/11/kosten-von-mcp-in-agenten.html)
+[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/06/09/kosten-von-mcp-in-agenten.html)
 holds unchanged: an n-step tool chain costs n+1 model calls, no matter who runs
 the loop. The Gateway is one more hop on the way to the tool, but not one more
 model call.

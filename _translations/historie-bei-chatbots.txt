@@ -176,7 +176,7 @@ The cache is a prefix comparison. Replace a tool result in the middle of the
 history with a placeholder and you've changed everything from that point on — and
 on the next call you pay full price for the entire remainder. How expensive that
 is, is covered in
-[Why Prompt Caching Is Mandatory for text2SQL Agents](/text2sql-agent-aws/2026/09/11/prompt-caching-pflicht.html).
+[Why Prompt Caching Is Mandatory for text2SQL Agents](/text2sql-agent-aws/2026/06/28/prompt-caching-pflicht.html).
 
 From which follows a rule that contradicts intuition: **clean up rarely and in
 large steps, not continuously and in small ones.** Trim a little on every turn and

@@ -2,7 +2,7 @@
 layout: post
 title: "Domänenwissen über MCP oder über RAG?"
 title_en: "Domain Knowledge via MCP or via RAG?"
-date: 2026-09-11 09:00:00 +0200
+date: 2026-05-17 20:45:00 +0200
 serie: "text2SQL-Agent auf AWS"
 ---
 
@@ -17,7 +17,7 @@ braucht – und wer entscheidet, dass er es braucht?**
 
 ## Warum das mehr zählt als jede Formatfrage
 
-Beim [Vergleich der Tabellenformate]({% post_url 2026-09-11-mcp-ausgabeformate %})
+Beim [Vergleich der Tabellenformate]({% post_url 2026-04-21-mcp-ausgabeformate %})
 ging es um Faktor 3 beim Tokenverbrauch. Hier geht es um eine Größenordnung mehr.
 
 Der BIRD-Benchmark liefert zu jeder Frage einen kurzen Satz Domänenwissen mit –

@@ -2,7 +2,7 @@
 layout: post
 title: "Welche Historie bei einem Chatbot?"
 title_en: "How Much History Does a Chatbot Need?"
-date: 2026-09-11 12:00:00 +0200
+date: 2026-07-23 20:10:00 +0200
 ---
 
 Ein Sprachmodell ist **vollständig zustandslos**. Es erinnert sich an nichts, es
@@ -188,7 +188,7 @@ Der Cache ist ein Präfix-Vergleich. Wer in der Mitte des Verlaufs ein
 Tool-Ergebnis durch einen Platzhalter ersetzt, hat alles ab dieser Stelle
 verändert – und zahlt beim nächsten Aufruf für den gesamten Rest wieder den
 vollen Preis. Wie teuer das ist, steht in
-[Warum Prompt Caching bei text2SQL-Agenten Pflicht ist]({% post_url 2026-09-11-prompt-caching-pflicht %}).
+[Warum Prompt Caching bei text2SQL-Agenten Pflicht ist]({% post_url 2026-06-28-prompt-caching-pflicht %}).
 
 Daraus folgt eine Regel, die dem Bauchgefühl widerspricht: **Selten und in
 großen Schritten aufräumen, nicht laufend und in kleinen.** Wer bei jedem Turn

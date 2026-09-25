@@ -300,7 +300,7 @@ intended. An implementation detail with a direct effect on n.
 **Make the result smaller.** Every row a tool returns is billed again on every
 subsequent turn. A limit in the tool therefore acts multiplicatively with chain
 depth — more on that in
-[Why MCP Functions Shouldn't Return JSON](/text2sql-agent-aws/2026/09/11/mcp-ausgabeformate.html)
+[Why MCP Functions Shouldn't Return JSON](/text2sql-agent-aws/2026/04/21/mcp-ausgabeformate.html)
 
 **Clear old tool results from the transcript.** If step 1 only served to find the
 table name, its full result doesn't need to ride along in step 5. Context editing
