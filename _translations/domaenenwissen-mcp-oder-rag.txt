@@ -14,7 +14,7 @@ and who decides that it needs it?**
 
 ## Why that matters more than any format question
 
-The [comparison of table formats](/text2sql-agent-aws/2026/05/12/mcp-ausgabeformate.html)
+The [comparison of table formats](/text2sql-agent-aws/2026/04/21/mcp-ausgabeformate.html)
 was about a factor of 3 in token consumption. This is about an order of magnitude
 more.
 

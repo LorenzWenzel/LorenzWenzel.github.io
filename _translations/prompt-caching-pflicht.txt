@@ -17,7 +17,7 @@ tokens that never change, against forty that always do.
 
 And then there's the property that decides everything: **every tool call produces
 a new model call.** How exactly that works is covered in
-[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/06/30/kosten-von-mcp-in-agenten.html)
+[The Hidden Cost of MCP in Agents](/text2sql-agent-aws/2026/06/09/kosten-von-mcp-in-agenten.html)
 — in short: the model only *requests* a tool, execution happens elsewhere, and
 the result starts a fresh inference. An n-step chain costs n + 1 model calls.
 

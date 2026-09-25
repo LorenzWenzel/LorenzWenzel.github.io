@@ -95,7 +95,7 @@ volume. If you run Claude Sonnet 5 as the generator and want to judge without a
 reference, use a different model — on Bedrock, if need be, from a different family.
 
 **Above all, it needs the same knowledge.** The
-[domain knowledge post](/text2sql-agent-aws/2026/06/07/domaenenwissen-mcp-oder-rag.html)
+[domain knowledge post](/text2sql-agent-aws/2026/05/17/domaenenwissen-mcp-oder-rag.html)
 was about the twenty percentage points a single sentence of domain knowledge is
 worth on BIRD. The same arithmetic applies to the judge: a judge that doesn't know
 "revenue" means net will rate the gross-revenue SQL as correct — regardless of how
@@ -186,7 +186,7 @@ plus the judge model
 
 ## And with Converse + MCP?
 
-In the [AgentCore post](/text2sql-agent-aws/2026/04/21/bedrock-agentcore-vs-converse-mcp.html)
+In the [AgentCore post](/text2sql-agent-aws/2026/09/06/bedrock-agentcore-vs-converse-mcp.html)
 the decision went against the AgentCore harness: the loop stays in our own hands,
 Converse plus MCP, because almost every lever in this series sits inside it. The
 obvious worry is that this also rules out AgentCore Evaluations. **It doesn't.** The
@@ -228,7 +228,7 @@ with Haiku 4.5** uses `expected_response` to check whether the query is equivale
 anyway — the FLEX idea. A second custom judge compares the **trajectory** with the
 expected tool sequence, a third checks the **assertions**. The trajectory isn't just
 a quality metric but a cost metric too: as the
-[MCP cost post](/text2sql-agent-aws/2026/06/30/kosten-von-mcp-in-agenten.html)
+[MCP cost post](/text2sql-agent-aws/2026/06/09/kosten-von-mcp-in-agenten.html)
 showed, an agent that calls the same six tools in six steps instead of one costs
 2.8 times as much.
 
