@@ -2,7 +2,7 @@
 layout: post
 title: "Warum Prompt Caching bei text2SQL-Agenten Pflicht ist"
 title_en: "Why Prompt Caching Is Mandatory for text2SQL Agents"
-date: 2026-06-28 18:40:00 +0200
+date: 2026-07-19 20:10:00 +0200
 ---
 
 Die meisten Empfehlungen zur Kostenoptimierung sind Abwägungen: etwas wird
@@ -20,7 +20,7 @@ sich nie ändern, gegen vierzig, die sich immer ändern.
 
 Und dazu kommt die Eigenschaft, die alles entscheidet: **Jeder Werkzeugaufruf
 erzeugt einen neuen Modellaufruf.** Wie das genau funktioniert, steht in
-[Kosten von MCP in Agenten]({% post_url 2026-06-09-kosten-von-mcp-in-agenten %}) – kurz: Das Modell fordert ein
+[Kosten von MCP in Agenten]({% post_url 2026-06-30-kosten-von-mcp-in-agenten %}) – kurz: Das Modell fordert ein
 Werkzeug nur an, ausgeführt wird es woanders, und mit dem Ergebnis beginnt eine
 neue Inferenz. Eine n-stufige Kette kostet n + 1 Modellaufrufe.
 

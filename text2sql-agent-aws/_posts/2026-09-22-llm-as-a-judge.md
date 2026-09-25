@@ -103,7 +103,7 @@ Referenz bewerten will, nimmt ein anderes Modell — auf Bedrock notfalls aus ei
 anderen Familie.
 
 **Vor allem braucht er dasselbe Wissen.** Im
-[Domänenwissen-Beitrag]({% post_url 2026-05-17-domaenenwissen-mcp-oder-rag %})
+[Domänenwissen-Beitrag]({% post_url 2026-06-07-domaenenwissen-mcp-oder-rag %})
 ging es um die zwanzig Prozentpunkte, die ein Satz Fachwissen auf BIRD ausmacht.
 Für den Judge gilt dieselbe Rechnung: Ein Judge, der nicht weiß, dass „Umsatz"
 netto gemeint ist, bewertet das Brutto-SQL als korrekt — und zwar ganz
@@ -198,7 +198,7 @@ Bewertungen plus das Judge-Modell
 
 ## Und bei Converse + MCP?
 
-Im [AgentCore-Beitrag]({% post_url 2026-09-06-bedrock-agentcore-vs-converse-mcp %})
+Im [AgentCore-Beitrag]({% post_url 2026-04-21-bedrock-agentcore-vs-converse-mcp %})
 fiel die Entscheidung gegen den AgentCore-Harness: Die Schleife bleibt in eigener
 Hand, Converse plus MCP, weil fast alle Hebel dieser Serie in ihr sitzen. Die
 naheliegende Befürchtung ist, dass man sich damit auch AgentCore Evaluations
@@ -241,7 +241,7 @@ abweicht, prüft ein **Custom-Judge mit Haiku 4.5** anhand von
 Ein zweiter Custom-Judge vergleicht die **Trajektorie** mit der erwarteten
 Werkzeugfolge, ein dritter prüft die **Zusicherungen**. Die Trajektorie ist
 dabei nicht nur eine Qualitäts-, sondern eine Kostenmetrik: Wie der
-[Beitrag zu den MCP-Kosten]({% post_url 2026-06-09-kosten-von-mcp-in-agenten %})
+[Beitrag zu den MCP-Kosten]({% post_url 2026-06-30-kosten-von-mcp-in-agenten %})
 gezeigt hat, kostet ein Agent, der dieselben sechs Werkzeuge in sechs Stufen
 statt in einer aufruft, das 2,8-Fache.
 
