@@ -194,7 +194,7 @@ the order. It only becomes a problem when it **doesn't** hit them equally — wh
 is, again, exactly when chunk sizes are far apart.
 
 Incidentally that's an argument for the hybrid search from the
-[retrieval post](/rag-auf-vertraegen-in-azure/2026/09/12/retrieval-varianten.html): BM25 has an
+[retrieval post](/rag-auf-vertraegen-in-azure/2025/09/14/retrieval-varianten.html): BM25 has an
 explicit length normalization built in with `b = 0.75`. The vector side has
 nothing comparable. Combine the two and you get the length correction for free on
 at least one of them.

@@ -203,7 +203,7 @@ gleich trifft — also wieder genau dann, wenn die Chunkgrößen weit auseinande
 liegen.
 
 Nebenbei ist das ein Argument für die hybride Suche aus dem
-[Retrieval-Beitrag]({% post_url 2026-09-12-retrieval-varianten %}):
+[Retrieval-Beitrag]({% post_url 2025-09-14-retrieval-varianten %}):
 BM25 hat mit `b = 0,75` eine explizite Längennormalisierung eingebaut. Die
 Vektorseite hat nichts Vergleichbares. Wer beide kombiniert, bekommt die
 Längenkorrektur wenigstens auf einer der beiden Seiten geschenkt.
