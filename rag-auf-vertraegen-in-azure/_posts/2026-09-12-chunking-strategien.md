@@ -2,7 +2,7 @@
 layout: post
 title: "Chunking-Strategien"
 title_en: "Chunking Strategies"
-date: 2025-10-24 19:05:00 +0200
+date: 2025-10-15 19:40:00 +0200
 serie: "RAG auf Verträgen in Azure"
 ---
 

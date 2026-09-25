@@ -2,7 +2,7 @@
 layout: post
 title: "Nicht jede Frage ist ein Retrieval-Problem"
 title_en: "Not Every Question Is a Retrieval Problem"
-date: 2025-10-29 22:30:00 +0100
+date: 2025-11-09 22:05:00 +0100
 serie: "RAG auf Verträgen in Azure"
 ---
 
