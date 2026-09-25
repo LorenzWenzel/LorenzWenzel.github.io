@@ -2,7 +2,7 @@
 layout: post
 title: "Reranker vs. Retrieval"
 title_en: "Reranker vs. Retrieval"
-date: 2026-09-12 11:00:00 +0200
+date: 2025-10-19 21:40:00 +0200
 serie: "RAG auf Verträgen in Azure"
 ---
 
