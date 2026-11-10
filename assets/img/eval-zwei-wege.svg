@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 552" width="900" height="552" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"><title id="t">Zwei Wege in denselben Dienst: AgentCore harness und Converse + MCP</title><desc id="d">Links zwei Wege, einen Agenten zu bauen. Weg 1, nativ: Der AgentCore harness erzeugt Spans automatisch. Weg 2, Converse + MCP mit eigener Schleife: Mit Strands ist die Telemetrie eingebaut und braucht nur ADOT, bei einer handgeschriebenen Schleife setzt man die drei Span-Typen invoke_agent, chat und execute_tool selbst; automatische botocore- und MCP-Spans wertet der Dienst nicht aus. Beide Wege schreiben nach Amazon CloudWatch mit Transaction Search. AgentCore Evaluations liest die Spans, ordnet sie ein, übersetzt sie in ein einheitliches Format und bewertet auf den Ebenen Session, Trace und Tool-Call mit LLM-Judges, Code ohne Modell und Musteranalyse. Die Ergebnisse gehen als OpenTelemetry-Events und Metriken zurück nach CloudWatch.</desc><rect x="0" y="0" width="900" height="552" fill="#fcfcfb"/><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#56554f"/></marker><marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1baf7a"/></marker></defs><text x="28" y="38" font-size="18" fill="#17171a" font-weight="600" text-anchor="start">Zwei Wege in denselben Dienst</text><text x="28" y="60" font-size="12.5" fill="#56554f" font-weight="400" text-anchor="start">Der Unterschied liegt vor CloudWatch: wer die Spans erzeugt. Ab dort ist die Bewertung dieselbe.</text>
+<rect x="28" y="76" width="12" height="12" rx="2.5" fill="#f0f0ee" stroke="#8a8f96" stroke-width="1.4"/><text x="46" y="86" font-size="12" fill="#56554f" font-weight="400" text-anchor="start">AWS liefert es</text><rect x="150" y="76" width="12" height="12" rx="2.5" fill="#eaf2fd" stroke="#2a78d6" stroke-width="1.4"/><text x="168" y="86" font-size="12" fill="#56554f" font-weight="400" text-anchor="start">du baust es</text>
+
+<!-- Weg 1 -->
+<rect x="28" y="104" width="240" height="104" rx="6" fill="#f0f0ee" stroke="#8a8f96" stroke-width="1.3"/>
+<text x="40" y="124" font-size="9.5" fill="#56554f" font-weight="600" text-anchor="start">WEG 1 · NATIV</text>
+<text x="40" y="144" font-size="12.5" fill="#17171a" font-weight="600" text-anchor="start">AgentCore harness</text>
+<text x="40" y="162" font-size="11.5" fill="#17171a" font-weight="400" text-anchor="start">Schleife von AWS, intern Strands</text>
+<text x="40" y="180" font-size="11.5" fill="#56554f" font-weight="400" text-anchor="start">Spans entstehen automatisch,</text>
+<text x="40" y="196" font-size="11.5" fill="#56554f" font-weight="400" text-anchor="start">ohne Code und ohne Konfiguration</text>
+
+<!-- Weg 2 -->
+<rect x="28" y="224" width="240" height="300" rx="6" fill="#eaf2fd" stroke="#2a78d6" stroke-width="1.3"/>
+<text x="40" y="244" font-size="9.5" fill="#1c5cab" font-weight="600" text-anchor="start">WEG 2 · CONVERSE + MCP</text>
+<text x="40" y="264" font-size="12.5" fill="#17171a" font-weight="600" text-anchor="start">Eigene Schleife</text>
+<rect x="40" y="276" width="216" height="84" rx="5" fill="#ffffff" stroke="#dcdbd6" stroke-width="1.1"/>
+<text x="52" y="296" font-size="11.5" fill="#17171a" font-weight="600" text-anchor="start">mit Strands</text>
+<text x="52" y="313" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">Telemetrie eingebaut, dazu ADOT:</text>
+<text x="52" y="330" font-size="10" fill="#17171a" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">aws-opentelemetry-distro</text>
+<text x="52" y="346" font-size="10" fill="#17171a" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">opentelemetry-instrument …</text>
+<rect x="40" y="370" width="216" height="100" rx="5" fill="#ffffff" stroke="#dcdbd6" stroke-width="1.1"/>
+<text x="52" y="390" font-size="11.5" fill="#17171a" font-weight="600" text-anchor="start">handgeschrieben</text>
+<text x="52" y="407" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">drei Span-Typen selbst setzen:</text>
+<text x="52" y="424" font-size="10" fill="#17171a" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">invoke_agent · chat ·</text>
+<text x="52" y="439" font-size="10" fill="#17171a" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">execute_tool</text>
+<text x="52" y="458" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">Inhalte als gen_ai.*-Attribute</text>
+<text x="40" y="492" font-size="11" fill="#a33a12" font-weight="600" text-anchor="start">Automatische botocore- und MCP-Spans</text>
+<text x="40" y="508" font-size="11" fill="#a33a12" font-weight="400" text-anchor="start">wertet der Dienst nicht aus.</text>
+
+<!-- CloudWatch -->
+<rect x="312" y="224" width="180" height="180" rx="6" fill="#ffffff" stroke="#dcdbd6" stroke-width="1.3"/>
+<text x="324" y="244" font-size="9.5" fill="#82807a" font-weight="600" text-anchor="start">AMAZON CLOUDWATCH</text>
+<text x="324" y="266" font-size="12" fill="#17171a" font-weight="600" text-anchor="start">Transaction Search</text>
+<text x="324" y="284" font-size="11.5" fill="#17171a" font-weight="400" text-anchor="start">Log-Gruppe des Agenten</text>
+<text x="324" y="301" font-size="10" fill="#17171a" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">Stream: spans</text>
+<line x1="324" y1="316" x2="480" y2="316" stroke="#e7e6e1" stroke-width="1"/>
+<text x="324" y="338" font-size="11.5" fill="#17171a" font-weight="400" text-anchor="start">Session → Trace → Span</text>
+<text x="324" y="355" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">OpenTelemetry, gen_ai.*</text>
+<text x="324" y="378" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">2–5 Minuten, bis die</text>
+<text x="324" y="393" font-size="11" fill="#56554f" font-weight="400" text-anchor="start">Spans auswertbar sind</text>
+
+<path d="M 270 156 L 290 156 L 290 282 L 310 282" fill="none" stroke="#56554f" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M 270 374 L 290 374 L 290 340 L 310 340" fill="none" stroke="#56554f" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="494" y1="314" x2="534" y2="314" stroke="#56554f" stroke-width="1.6" marker-end="url(#a)"/>
+
+<!-- Evaluations -->
+<rect x="536" y="104" width="336" height="340" rx="8" fill="#ffffff" stroke="#e7e6e1" stroke-width="1.2"/>
+<text x="550" y="126" font-size="9.5" fill="#82807a" font-weight="600" text-anchor="start">AMAZON BEDROCK AGENTCORE EVALUATIONS</text>
+<rect x="550" y="138" width="308" height="58" rx="5" fill="#f6f6f4" stroke="#dcdbd6" stroke-width="1.1"/>
+<text x="562" y="159" font-size="11.5" fill="#17171a" font-weight="600" text-anchor="start">1 · Spans einlesen und einordnen</text>
+<text x="562" y="178" font-size="10" fill="#56554f" font-weight="400" text-anchor="start" font-family="ui-monospace,Menlo,Consolas,monospace">invoke_agent · chat · execute_tool</text>
+<rect x="550" y="204" width="308" height="58" rx="5" fill="#f6f6f4" stroke="#dcdbd6" stroke-width="1.1"/>
+<text x="562" y="225" font-size="11.5" fill="#17171a" font-weight="600" text-anchor="start">2 · In ein einheitliches Format übersetzen</text>
+<text x="562" y="244" font-size="10.8" fill="#56554f" font-weight="400" text-anchor="start">Frage, Antwort, Werkzeug, Argumente, Ergebnis</text>
+<rect x="550" y="270" width="308" height="160" rx="5" fill="#ffffff" stroke="#dcdbd6" stroke-width="1.1"/>
+<text x="562" y="291" font-size="11.5" fill="#17171a" font-weight="600" text-anchor="start">3 · Bewerten: SESSION, TRACE, TOOL_CALL</text>
+<circle cx="566" cy="314" r="2.8" fill="#2a78d6"/><text x="576" y="318" font-size="11" fill="#17171a" font-weight="600" text-anchor="start">LLM-Judge</text><text x="846" y="318" font-size="10.3" fill="#82807a" font-weight="400" text-anchor="end">Built-in · Drittanbieter · Custom</text>
+<circle cx="566" cy="338" r="2.8" fill="#1baf7a"/><text x="576" y="342" font-size="11" fill="#17171a" font-weight="600" text-anchor="start">Code, ohne Modell</text><text x="846" y="342" font-size="10.3" fill="#82807a" font-weight="400" text-anchor="end">Trajectory…Match · Lambda</text>
+<circle cx="566" cy="362" r="2.8" fill="#eb6834"/><text x="576" y="366" font-size="11" fill="#17171a" font-weight="600" text-anchor="start">Muster über Sessions</text><text x="846" y="366" font-size="10.3" fill="#82807a" font-weight="400" text-anchor="end">FailureAnalysis, nur Batch</text>
+<line x1="562" y1="380" x2="846" y2="380" stroke="#e7e6e1" stroke-width="1"/>
+<text x="562" y="399" font-size="10.8" fill="#56554f" font-weight="400" text-anchor="start">On-demand · Dataset (Preview) · Batch · Online</text>
+<text x="562" y="417" font-size="10.8" fill="#a33a12" font-weight="400" text-anchor="start">Referenzen nur offline – Online hat keine Ground Truth</text>
+
+<!-- Results -->
+<rect x="312" y="468" width="560" height="56" rx="6" fill="#e6f7f0" stroke="#1baf7a" stroke-width="1.2"/>
+<text x="326" y="490" font-size="11.5" fill="#0f7a56" font-weight="600" text-anchor="start">Ergebnisse zurück nach CloudWatch</text>
+<text x="326" y="509" font-size="10.5" fill="#56554f" font-weight="400" text-anchor="start">Score, Label, Begründung als OTel-Event am ursprünglichen Span · Metriken · Dashboard</text>
+<line x1="704" y1="446" x2="704" y2="466" stroke="#1baf7a" stroke-width="1.6" marker-end="url(#ag)"/>
+<path d="M 402 466 L 402 406" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ag)"/>
+</svg>

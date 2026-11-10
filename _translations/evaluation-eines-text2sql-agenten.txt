@@ -1,0 +1,542 @@
+---
+slug: evaluation-eines-text2sql-agenten
+title: "Evaluating a text2SQL Agent on AWS"
+---
+
+The [judge post](/text2sql-agent-aws/2026/09/22/llm-as-a-judge.html) asked *who*
+should pass judgment on the agent and how strong that judge needs to be. Amazon
+Bedrock AgentCore Evaluations appeared there as a detour. This post turns the
+question around: **what exactly can AWS evaluate about a text2SQL agent, where
+does the service get its material — and what do you have to supply, depending on
+how the agent is built?**
+
+First, what doesn't happen here: nothing is measured. No golden set, no run, no
+scores. The text compiles what the documentation says as of 10 November 2026 and
+sorts it by the two ways of building from the
+[AgentCore post](/text2sql-agent-aws/2026/09/06/bedrock-agentcore-vs-converse-mcp.html):
+natively in the AgentCore harness, and with your own loop made of the Converse
+API and MCP.
+
+## What gets evaluated is the trail, not the agent
+
+The most important sentence first: **the evaluation service never calls the
+agent.** It reads what the agent left behind as telemetry — OpenTelemetry spans
+in CloudWatch — converts them to a unified format and scores that
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations.html)).
+Which is why it doesn't care where the agent runs: on the AgentCore Runtime or
+*"hosted outside of AgentCore"*
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/how-it-works-evaluations.html)).
+
+The telemetry has three tiers: a **session** is a conversation, a **trace** is
+one question-and-answer cycle within it, a **span** is a single unit of work
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-telemetry.html)).
+Of the spans, the service evaluates exactly three kinds
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-telemetry.html)):
+
+| Span type | Identified by | In text2SQL |
+|---|---|---|
+| Invoke agent | `gen_ai.operation.name = invoke_agent` | one run, from question to answer |
+| Inference | `gen_ai.operation.name = chat` | one model call — there are n + 1 of them |
+| Execute tool | `gen_ai.operation.name = execute_tool` | one tool call, such as `run_query` with the SQL as its argument |
+
+![Links eine Session mit zwei Traces. Der erste Trace ist aufgeklappt: ein invoke_agent-Span umschließt drei chat-Spans und zwei execute_tool-Spans, schema_fuer_frage und run_query. Der run_query-Span trägt den Werkzeugnamen, das SQL als Argument, die Ergebniszeilen, Status und Dauer. Rechts die drei Bewertungsebenen: SESSION mit Goal success rate, Trajectory-Match und Failure analysis; TRACE mit Correctness, Faithfulness und Helpfulness; TOOL_CALL mit Tool selection accuracy, Tool parameter accuracy und eigenen Prüfungen als Custom-Judge oder Lambda.](/assets/img/eval-trace-ebenen.svg)
+
+From these spans the service extracts the values the evaluators work with: the
+user's question, the answer, the system prompt, the messages of each model call,
+and for each tool call its name, arguments and result
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-generic.html)).
+Everything else in the span — timestamps, duration, status, token counts — is
+not part of what a judge is shown. It's there all the same, and further down it
+will be needed.
+
+For text2SQL, that's the good news of this post: **the SQL isn't an intermediate
+product you'd first have to make visible. It is the argument of a tool call and
+therefore sits in the trace as a span of its own** — together with what Athena
+answered.
+
+Where the content lives comes in two flavors. With *unified telemetry*, prompts,
+SQL and result rows stay on the span and everything lands in one log group per
+agent; that's the default for agents created on or after 20 July 2026 and
+requires ADOT 0.18.0 or later. With *split telemetry*, the content moves into
+separate event records and the spans go to the shared `aws/spans` group. The
+service reads both; in both cases it needs CloudWatch Transaction Search.
+
+The verdict lands where the material came from: as an OpenTelemetry event with
+score, label and explanation in CloudWatch Logs, parented to the original span
+where possible, and as a metric in the `Bedrock-AgentCore/Evaluations` namespace
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/results-and-output.html)).
+A metric can carry an alarm.
+
+## Three levels, four kinds of evaluator
+
+Every evaluator works at exactly one **level**: `SESSION`, `TRACE` or
+`TOOL_CALL`. There is no level for the individual model call.
+
+And there are four kinds, which differ in who does the judging:
+
+| Kind | Who judges | What you configure |
+|---|---|---|
+| **Built-in with a judge** | a language model; AWS fixes model and prompt | nothing, just the ID — say `Builtin.Faithfulness` |
+| **Built-in without a model** | code from AWS | nothing; the three `Builtin.Trajectory…Match` |
+| **Custom judge** | a Bedrock model of your choice | instructions, scale, model, level |
+| **Code-based** | your own Lambda function | everything |
+
+Two hybrids sit in between. **Third-party evaluators** from DeepEval and
+AutoEval are run by AWS like built-ins, but AWS explicitly makes no claims about
+their quality
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/third-party-evaluators.html)).
+**Derived evaluators** take the prompt and scale of a built-in and run them on a
+model you choose, in your own account — one way out if the built-ins'
+cross-region inference isn't acceptable
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations-cross-region-inference.html)).
+
+What a judge gets to see is determined by placeholders, and those are fixed per
+level
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/create-evaluator.html)):
+
+| Level | Placeholders | Content |
+|---|---|---|
+| `SESSION` | `context`, `available_tools` | all questions, answers and tool calls of the conversation; the available tools with parameters and description |
+| `TRACE` | `context`, `assistant_turn` | everything before, plus the current question and its tool calls; the answer under evaluation |
+| `TOOL_CALL` | `context`, `tool_turn`, `available_tools` | everything up to just before the call; the call under evaluation; the tool list |
+
+With a reference, `expected_response` (trace) and `expected_tool_trajectory`,
+`actual_tool_trajectory` and `assertions` (session) are added.
+
+The context is handed to the judge as a transcript: `User:`, `Assistant:`,
+`Action:` for the tools chosen, `Tool:` for their outputs. **So the judge reads
+the trace, not just the answer** — including Athena's result rows.
+
+## What that means for text2SQL
+
+The evaluators that ship with the service are generic. What they actually check
+on a text2SQL agent is in their prompts, and those are published
+([templates](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/prompt-templates-builtin.html)).
+They're worth reading: some do something other than what their name promises.
+
+**`Builtin.ToolParameterAccuracy` does not check whether the SQL is right.** The
+question put to the judge is whether the parameter values come from the
+preceding context, *"without hallucinating or fabricating its own values"* — and
+explicitly not whether the call is the right one: *"ONLY evaluate whether the
+parameters used come from the preceding context."* For a SQL argument that
+means: the evaluator finds the column that never appeared in the schema, and the
+region code nobody mentioned. It doesn't find `SUM(gross_revenue)` where net was
+meant — the column is in the schema, after all. A hallucination check, not a
+correctness check. That's narrower than I described it in the judge post. And it
+has a precondition: the judge only knows the schema if it's in its context —
+which it certainly is when it entered the transcript as the result of a tool
+such as `schema_fuer_frage`. Whether the judge is shown the system prompt as
+well, the docs don't say.
+
+**`Builtin.ToolSelectionAccuracy` has a repetition check built in.** The judge
+is told to first list all earlier tool calls and check whether the current one
+repeats one of them with the same name and the same arguments. In text2SQL,
+that's the agent asking the same query twice.
+
+**`Builtin.Faithfulness` compares the answer with the transcript**, and the
+transcript includes the tool outputs. It catches the agent that reads 4.21
+million and writes 4.12. The silent failure from the judge post — wrong SQL,
+faithfully reported — it cannot catch, by construction.
+
+**`Builtin.Correctness` with `expectedResponse` is execution accuracy through
+the back door.** With a reference, the evaluator switches prompts, and that
+prompt demands, for factual queries with a single correct answer, *"the correct
+specific values (names, numbers, dates, locations)"*. If the golden set says
+"Net revenue in Q3 was €3.58 million", an answer of 4.21 million fails — without
+anyone executing SQL. That holds up for single-figure questions. For a result
+table of two hundred rows it no longer does.
+
+**The three trajectory evaluators need no model.** `TrajectoryExactOrderMatch`,
+`InOrderMatch` and `AnyOrderMatch` compare the actual sequence of tool names
+with the expected one programmatically; token usage is zero
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/ground-truth-evaluations.html)).
+For this series, `ExactOrder` is the interesting variant: if you expect
+`[schema_fuer_frage, run_query]`, every session fails in which the agent needs
+`run_query` a second time — precisely the extra stage that, by the n+1 rule from
+the [MCP post](/text2sql-agent-aws/2026/06/09/kosten-von-mcp-in-agenten.html),
+costs another model call. Only names are compared, though, not arguments — and
+they're compared as they appear in the trace, which behind a Gateway means with
+its prefix.
+
+**`Builtin.FailureAnalysis` goes all the way down to the span.** The evaluator
+examines every span of a session, records a finding with span ID, category and
+confidence for each failure, looks for the cause — which may lie in an earlier
+span — and groups similar failures across sessions into patterns with a root
+cause and a suggested fix
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/builtin-failure-analysis.html)).
+Among the categories are some this series has met before: execution errors such
+as timeouts, hallucinated parameters, tool definitions that don't match the
+tool's behavior, and **repeated tool calls without progress** — the polling loop
+from the MCP post. Three limitations: it exists only in batch, its verdict is a
+judgment without a reference, and the score is inverted — 1.0 means "failures
+found".
+
+**A Lambda evaluator gets the whole trace.** The function receives all spans of
+the session as `sessionSpans`, plus the target (trace or span ID) and the
+references, and returns a label, optionally a value and an explanation
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-based-evaluators.html)).
+That makes checkable what is in the span and no judge looks at: the SQL text
+(partition filter set? `SELECT *`?), the status of the tool call, the duration,
+the number of `chat` spans — the chain depth, that is — and, with Strands, the
+token counters including `gen_ai.usage.cache_read.input_tokens`
+([Strands](https://strandsagents.com/docs/user-guide/sdk/observability-evaluation/traces/)).
+Whether the cache from the
+[caching post](/text2sql-agent-aws/2026/06/28/prompt-caching-pflicht.html) is
+hitting thereby becomes an evaluation rule. The limits: at most 300 seconds of
+runtime and 6 MB of payload — anything beyond that is truncated.
+
+For your own SQL judge there's one more shortcut: a **multi-dimension
+evaluator** rates one target in a *single* judge call on several named
+dimensions — table choice, filters, aggregation, metric definition — each with
+its own instruction and scale
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/multi-dimension-evaluators.html)).
+The price: if that one call fails, all dimensions fail.
+
+As a map — the built-ins without their `Builtin.` prefix:
+
+| What do I want to know? | With what | Level | Where |
+|---|---|---|---|
+| Are the numbers in the answer right? | `Correctness` + `expectedResponse` | Trace | offline, with reference |
+| Is the result set right? | Lambda: result from the `run_query` span against a golden result set | Tool call | offline, with reference |
+| Does the answer report the result faithfully? | `Faithfulness` | Trace | online too |
+| Invented tables, columns, filter values? | `ToolParameterAccuracy` | Tool call | online too |
+| Right tool, no repetition? | `ToolSelectionAccuracy` | Tool call | online too |
+| Plausible SQL in domain terms — net rather than gross? | Custom judge, definitions in the instructions | Tool call | online too |
+| Expected tool sequence, no extra attempt? | `TrajectoryExactOrderMatch` | Session | offline, with reference |
+| Does it ask back when the time period is missing? | `GoalSuccessRate` + `assertions` | Session | offline, with reference |
+| Partition filter, no `SELECT *`, chain depth, cache hits? | Lambda | Tool call, session | online too |
+| Which failure patterns exist, and where do they arise? | `FailureAnalysis` | Session → span | batch only |
+
+### What's missing
+
+Three gaps worth knowing before you plan:
+
+- **There is no reference field for SQL or result sets.** References come in
+  exactly three forms: `expectedResponse` (one text per trace), `assertions`
+  (sentences per session) and `expectedTrajectory` (tool names). A Lambda gets
+  them passed through — but if you want to compare a golden SQL or a golden
+  result set, you have to put it as text into one of those fields, or have the
+  Lambda fetch it from your own store by looking up the question.
+- **Online has no reference.** The service doesn't allow evaluators with
+  reference placeholders in online configurations; it detects them at creation
+  time.
+- **What gets evaluated is what the tool returned.** If `run_query` delivers the
+  first 100 of 1,248 rows, judge and Lambda see 100 rows. What happens inside
+  the MCP server — Athena's execution ID, bytes scanned, wait time — only
+  reaches the evaluators if it's in the result or set as an attribute on the
+  span.
+
+## When evaluation happens
+
+Four modes. They differ mainly in who collects the spans and whether a reference
+may come along
+([comparison](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/batch-evaluations.html)):
+
+| | On-demand | Dataset runner (preview) | Batch | Online |
+|---|---|---|---|---|
+| Trigger | one API call, synchronous | the SDK invokes the agent per scenario, waits, evaluates | one job, asynchronous | continuous |
+| Spans | supplied by the caller | collected by the SDK or the service | found by the service in CloudWatch | read by the service from log group or endpoint |
+| Scope | one session, one evaluator, up to 10 results | a golden set | up to 500 sessions, 10 evaluators | a sample, 10% by default; up to 25 evaluators |
+| Reference | yes | yes, from the dataset | yes, per session | no |
+| Result | immediately in the response | per scenario or aggregated | average per evaluator, details in CloudWatch | logs, metrics, dashboard |
+| What for | trying out an evaluator, examining one session | release pipeline | before/after, regression, failure analysis | monitoring |
+
+The dataset format fits text2SQL almost without modification: per scenario, the
+questions as `turns` with an optional `expected_response`, plus
+`expected_trajectory` and `assertions`
+([schema](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/dataset-evaluations-schema.html))
+— three of the four parts the golden set had in the judge post. The fourth, the
+reference SQL, has no field; see above. Instead of fixed questions, a model can
+also play the user (*user simulation*); in that case only assertions count as a
+reference.
+
+Two timings belong here. After a run it takes two to five minutes for CloudWatch
+to ingest the telemetry; the dataset runners therefore wait 180 seconds by
+default. And online evaluates a session only once it is complete — that is, once
+no request has arrived for 15 minutes (configurable from 1 to 60); after that it
+typically takes up to another 15 minutes
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/ab-testing-target-based.html)).
+
+**Evaluation is monitoring, not protection.** It doesn't prevent a wrong answer,
+it counts it. If you want to prevent, you need something that sits *before* the
+tool call: a hook in code in your own loop, or, with the harness, the lifecycle
+hooks, whose `before_tool_call` can have a Lambda deny a call. AWS's comparison
+table lists those by now; when the AgentCore post was written, it still said "no
+hooks".
+
+## Way 1: natively in the AgentCore harness
+
+With the harness, the loop belongs to AWS, and the telemetry with it: *"Every
+harness invocation automatically generates traces, logs, and metrics through
+AgentCore Observability in CloudWatch. […] No extra configuration."*
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-operations.html)).
+In the docs' comparison table, observability is one of the rows where the
+harness has "Yes" with no code of your own and the Runtime has "Custom"
+([harness vs. Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-vs-runtime.html)).
+
+What's left to do is little:
+
+1. Turn on **Transaction Search** in CloudWatch, once per account.
+   `agentcore deploy` does it for you.
+2. **Choose evaluators** and start. For batch, the CLI takes the harness ID
+   directly and resolves log group and service name itself
+   ([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/batch-evaluations-start.html));
+   an online configuration needs those same two pieces of information, a list
+   of evaluators, a sampling rate and an execution role.
+3. Build **custom evaluators** for what the built-ins don't cover. That's the
+   same work on both ways.
+
+Session ID, log group, export: all in place, because the harness runs on the
+Runtime.
+
+The native way has a second advantage, and it lies behind the evaluation.
+**AgentCore optimization** builds on the evaluators: *recommendations* generate
+a revised system prompt or sharper tool descriptions from traces and a target
+evaluator; *A/B tests* split traffic through the Gateway and report mean,
+p-value and confidence interval per evaluator
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/optimization.html)).
+With the harness, the system prompt is configuration — a recommendation can be
+applied without touching code.
+
+What you don't control on this way is the content of the trace. Custom
+attributes on a span are set in the loop, and with the harness the loop belongs
+to AWS.
+
+## Way 2: Converse + MCP
+
+Here the loop is yours, and so is the question of where the spans come from. The
+first finding is sobering: **the Converse API and MCP produce nothing on their
+own that the service evaluates.** Automatic OpenTelemetry instrumentation exists
+for both — for `botocore` including `bedrock-runtime`, and for MCP. Those are
+exactly the scopes the docs exclude, so that they don't produce *"spurious
+agent, tool, or inference spans"*
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-generic.html)).
+To the service, a Converse call isn't a model call until someone wraps a `chat`
+span around it. Who does that depends on how the loop is built.
+
+### With Strands
+
+The route from the AgentCore post. Strands brings the telemetry with it: an
+agent produces `invoke_agent`, `chat` and `execute_tool` spans under the scope
+`strands.telemetry.tracer`, with no additional library
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/supported-frameworks-strands.html)).
+The call of an MCP tool, too, runs through Strands' tool execution and gets its
+`execute_tool` span — on the client side, not in the MCP server.
+
+Only the export is missing: `aws-opentelemetry-distro` 0.18.0 or later as a
+dependency, and starting via `opentelemetry-instrument python main.py`
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html)).
+The rest depends on hosting:
+
+- **On the AgentCore Runtime**, the Runtime sets the `session.id` and exports to
+  the agent's log group. That's all there is to it.
+- **Outside** — Fargate, EKS, Lambda — four things are added: a log group of
+  your own; a set of environment variables (`AGENT_OBSERVABILITY_ENABLED=true`,
+  `OTEL_RESOURCE_ATTRIBUTES` with the `service.name`,
+  `OTEL_EXPORTER_OTLP_TRACES_HEADERS` with the log group); a resource policy
+  that lets X-Ray write to that log group; and the session ID, which you set
+  yourself as the OpenTelemetry baggage entry `session.id`. Evaluation is
+  organized by session throughout — without the ID, the anchor is missing.
+
+### With a hand-written loop
+
+If you write the Converse loop yourself, you write the spans too. The service
+accepts any agent that follows one of two conventions — OpenTelemetry GenAI or
+OpenInference — and requires three things:
+
+1. a **scope name** with the prefix `opentelemetry.instrumentation.` (or
+   `openinference.instrumentation.`),
+2. on every span, the **identifying attribute** `gen_ai.operation.name`,
+3. the **content in the documented attributes** — not in an envelope of your
+   own, because the service reads it as a string without parsing it.
+
+As a sketch, derived from the attribute list in the docs and not executed:
+
+```python
+tracer = trace.get_tracer("opentelemetry.instrumentation.text2sql_agent")
+span = tracer.start_as_current_span
+
+# Außerhalb der Runtime vorher: session.id als Baggage setzen.
+with span("invoke_agent text2sql") as lauf:
+    lauf.set_attribute("gen_ai.operation.name", "invoke_agent")
+    lauf.set_attribute("gen_ai.task.input", frage)
+
+    while True:
+        with span("chat") as modell:
+            modell.set_attribute("gen_ai.operation.name", "chat")
+            modell.set_attribute("gen_ai.system_instructions", systemprompt)
+            modell.set_attribute("gen_ai.input.messages", json.dumps(verlauf))
+            antwort = bedrock.converse(...)                    # Converse
+            modell.set_attribute("gen_ai.output.messages",
+                                 json.dumps(antwort["output"]))
+
+        if antwort["stopReason"] != "tool_use":
+            break
+
+        for aufruf in tool_uses(antwort):
+            name, args = aufruf["name"], json.dumps(aufruf["input"])
+            with span(f"execute_tool {name}") as werkzeug:
+                werkzeug.set_attribute("gen_ai.operation.name", "execute_tool")
+                werkzeug.set_attribute("gen_ai.tool.name", name)
+                werkzeug.set_attribute("gen_ai.tool.call.arguments", args)
+                ergebnis = mcp.call_tool(name, aufruf["input"])  # MCP
+                werkzeug.set_attribute("gen_ai.tool.call.result", ergebnis)
+
+    lauf.set_attribute("gen_ai.task.output", antworttext(antwort))
+```
+
+The tool span is where the evaluation of the SQL hangs: without
+`gen_ai.tool.call.arguments`, there is nothing for any tool-level evaluator to
+read.
+
+There is a shortcut, and it's a dead end. If you set only
+`agentcore.invocation.user_prompt` and `agentcore.invocation.agent_response`,
+the service evaluates the answer — *"the agent prompt and response only, not
+inference or tool spans"*. For text2SQL that means: no tool level, no
+trajectory, faithfulness without tool output. Exactly the half that matters.
+
+### What both variants share
+
+Outside the Runtime, an online configuration doesn't point at an agent endpoint
+but at a log group and a service name — the one from `OTEL_RESOURCE_ATTRIBUTES`
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/create-online-evaluations.html)).
+The SDK's dataset runners are built to be neutral: they require an
+`agent_invoker`, and that may address the agent via `invoke_agent_runtime`, via
+HTTP or as a function call
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/dataset-evaluations-on-demand.html)).
+Even A/B tests work if the agent is registered as a Gateway target
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/ab-testing-3p-agents.html)).
+And if no scores appear despite all that — typical messages are
+`LogEventMissingException` and `ToolSpanMappingException` — AWS ships a
+diagnostic skill for coding assistants
+([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/diagnose-evaluation-issues.html)).
+
+On top of that comes an advantage the harness doesn't have: **whoever writes the
+spans decides what a Lambda evaluator can check.** The Athena execution ID, the
+bytes scanned, the hit list of the schema search — one extra attribute on the
+tool span, and it's available to every rule check.
+
+## The two ways side by side
+
+![Links zwei Wege, einen Agenten zu bauen. Weg 1, nativ: Der AgentCore harness erzeugt Spans automatisch. Weg 2, Converse + MCP mit eigener Schleife: Mit Strands ist die Telemetrie eingebaut und braucht nur ADOT; bei einer handgeschriebenen Schleife setzt man die drei Span-Typen invoke_agent, chat und execute_tool selbst, automatische botocore- und MCP-Spans wertet der Dienst nicht aus. Beide Wege schreiben nach Amazon CloudWatch mit Transaction Search. AgentCore Evaluations liest die Spans, ordnet sie ein, übersetzt sie in ein einheitliches Format und bewertet auf den Ebenen Session, Trace und Tool-Call mit LLM-Judges, Code ohne Modell und Musteranalyse. Die Ergebnisse gehen als OpenTelemetry-Events und Metriken zurück nach CloudWatch.](/assets/img/eval-zwei-wege.svg)
+
+| | Harness (native) | Own loop with Strands | Hand-written Converse loop |
+|---|---|---|---|
+| Producing spans | AWS, automatically | Strands, built in | yourself: three span types, GenAI attributes |
+| Export to CloudWatch | AWS | ADOT package and start command | ADOT package and start command |
+| Session ID | Runtime | Runtime — outside: baggage | Runtime — outside: baggage |
+| Log group and service name | resolved by the CLI from the agent ID | Runtime: likewise — outside: create and specify yourself | as with Strands |
+| Replaying a golden set | SDK runner with your own invoker | SDK runner; on the Runtime also via CLI | as with Strands |
+| Custom attributes in the span | not provided for | yes | yes |
+| Applying recommendations | configuration | code or configuration bundle | code or configuration bundle |
+| Evaluators, levels, modes, prices | same | same | same |
+
+## What it costs
+
+Prices are the same on both ways
+([pricing page](https://aws.amazon.com/bedrock/agentcore/pricing/)): built-in
+evaluators \$2.40 per million input and \$12 per million output tokens, model
+included; custom evaluators \$1.50 per 1,000 evaluations plus the judge model in
+your own account. Batch evaluations cost 25% less: \$1.80 and \$9 per million
+tokens. With the profile from the judge post — 6,000 tokens in, 400 out — that's
+\$14.40 instead of \$19.20 per 1,000 built-in evaluations. The trajectory
+evaluators consume no tokens.
+
+The cost driver specific to text2SQL is in the placeholder table above: **the
+judge's context contains the tool outputs.** A result set the agent carries in
+its transcript is also read by every judge that evaluates that trace — for
+built-ins at the token price, capped at 200,000 input tokens per evaluation
+([quotas](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html)).
+AWS's own worked example assumes 15,000 input tokens per evaluation. The row
+limit in the tool from the
+[format post](/text2sql-agent-aws/2026/04/21/mcp-ausgabeformate.html) therefore
+saves twice: on the agent and on its examiner.
+
+## What it depends on
+
+| If … | then |
+|---|---|
+| the agent runs in the harness | the telemetry is there; the work starts with the evaluators |
+| the loop is Strands and runs on the Runtime | one dependency, one start command — after that, like native |
+| the loop is Strands and runs on Fargate | additionally log group, environment variables, resource policy, session ID via baggage |
+| the Converse loop is hand-written | set three span types yourself; the automatic `botocore` instrumentation doesn't count |
+| only question and answer are in the trace | the answer can be evaluated — not the SQL, not the path |
+| the SQL is to be evaluated | it must be the argument in an `execute_tool` span |
+| correctness is to be measured | offline and with a reference: `Correctness` + `expectedResponse`, a Lambda for result sets |
+| only production traffic is available | hallucination, faithfulness, rules, plausibility — not correctness |
+| a wrong query is to be prevented | evaluation is the wrong tool; that's a hook before the tool call |
+| result sets are large | the judge pays for them too — row limit in the tool |
+
+## What I take from this
+
+**The question "native or Converse + MCP" doesn't decide what can be evaluated,
+but who lays the trail.** Evaluators, levels, modes and prices are identical on
+both ways, because the service only sees the spans in CloudWatch — not who runs
+the loop. The harness takes the instrumentation off your hands. Your own loop
+costs you that — with Strands on the Runtime one dependency and one start
+command, outside the Runtime an afternoon, hand-written a little more — and in
+return gives you control over what's in the span. The recommendation from the
+AgentCore post, your own code on the Runtime, loses nothing essential when it
+comes to evaluation.
+
+**For text2SQL, the value of the service lies one level deeper than its name
+suggests.** The interesting thing isn't the answer but the `run_query` span:
+that's where the SQL is, that's where the result is, and that's where the checks
+that matter for this agent attach — invented columns, repeated queries, missing
+partition filters, chain depth. Evaluating the answer without seeing the path is
+the silent failure with a nicer dashboard.
+
+Here's how I'd start:
+
+- **At release**, on a golden set via the dataset runner:
+  `TrajectoryExactOrderMatch` (no model), `Correctness` with an expected answer,
+  `GoalSuccessRate` with assertions, and a Lambda for the result set.
+- **In production**, on a sample: `ToolParameterAccuracy`, `Faithfulness`, a
+  custom judge for the SQL with the metric definitions in its instructions, and
+  a Lambda for the rules.
+- **Regularly**, as a batch over the most recent production sessions:
+  `FailureAnalysis` together with `GoalSuccessRate` — not as a verdict, but as a
+  list of the places where a human should take a look.
+
+## Method and caveats
+
+Nothing here is measured or executed. The post reproduces the AWS documentation
+as of 10 November 2026 and draws conclusions from it; the code sketch is derived
+from the attribute list, not tested. Dataset evaluation is marked as public
+preview, and its interfaces may change.
+
+Five things I couldn't substantiate, and I'd rather say so than gloss over it:
+
+- whether `tool_turn` contains the result of the tool call besides name and
+  arguments — the docs only say *"the tool call under evaluation"*;
+- whether the system prompt is part of `context`. For an agent whose schemas
+  live in the system prompt, that decides whether `ToolParameterAccuracy` takes
+  real columns for invented ones;
+- under which scope the harness writes its spans; that they are produced and
+  that the batch CLI finds them is in the docs, the how is not;
+- whether a Lambda evaluator is billed like a custom evaluator at \$1.50 per
+  1,000 evaluations — the pricing page doesn't name it separately;
+- whether the free-form `metadata` field of a dataset scenario reaches the
+  evaluator. If it does, it would be the natural place for the reference SQL.
+
+And one inconsistency: the pricing page speaks of 13 built-in evaluators, the
+templates page lists 17 prompts, and on top of those come the three trajectory
+evaluators and the failure analysis. I've gone by the documentation.
+
+---
+
+**In short:** AgentCore Evaluations doesn't evaluate the agent but its
+OpenTelemetry spans in CloudWatch — at three levels: session, trace and
+individual tool call. In text2SQL the SQL is the argument in the `run_query`
+span and is therefore itself evaluable, along with Athena's result. The
+built-ins check more narrowly than their names sound: `ToolParameterAccuracy`
+finds invented columns, not wrong metrics; `Faithfulness` finds wrongly reported
+numbers, not wrongly computed ones. Correctness exists only offline and with a
+reference — `Correctness` with an expected answer, trajectory comparison without
+a model, and for result sets a Lambda that gets the whole trace. Online is left
+with what can be checked without ground truth. Between the native harness and
+your own loop of Converse and MCP, the difference isn't what can be evaluated
+but who produces the spans: the harness does it automatically, Strands with one
+package and one start command, and a hand-written loop sets the three span types
+itself — because the service doesn't evaluate the automatic `botocore` and MCP
+spans.
